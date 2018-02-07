@@ -1,17 +1,12 @@
 package ca.team3161.robot;
 
-import java.util.HashSet;
-import java.util.Set;
-import edu.wpi.first.wpilibj.DoubleSolenoid;
-import edu.wpi.first.wpilibj.DriverStation;
-import edu.wpi.first.wpilibj.Encoder;
-
 import com.ctre.phoenix.motorcontrol.can.WPI_TalonSRX;
 import com.kauailabs.navx.frc.AHRS;
-import ca.team3161.lib.utils.controls.Gamepad.Button;
-import ca.team3161.lib.utils.controls.LogitechDualAction.LogitechButton;
+
 import ca.team3161.lib.utils.controls.LogitechDualAction;
+import edu.wpi.first.wpilibj.Compressor;
 import edu.wpi.first.wpilibj.DoubleSolenoid;
+import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.IterativeRobot;
 import edu.wpi.first.wpilibj.PIDController;
 import edu.wpi.first.wpilibj.PIDOutput;
@@ -25,10 +20,10 @@ public class Robot extends IterativeRobot implements PIDOutput
 { 
 
 	//This is declaring the Motors with the corresponding Controllers
-	private WPI_TalonSRX frontLeftDrive = new WPI_TalonSRX(0);
-	private WPI_TalonSRX frontRightDrive = new WPI_TalonSRX(1);
-	private WPI_TalonSRX backLeftDrive = new WPI_TalonSRX(2);
 	private WPI_TalonSRX backRightDrive = new WPI_TalonSRX(3);
+	private WPI_TalonSRX frontRightDrive = new WPI_TalonSRX(1);
+	private WPI_TalonSRX frontLeftDrive = new WPI_TalonSRX(0);
+	private WPI_TalonSRX backLeftDrive = new WPI_TalonSRX(2);
 	private VictorSP IntakeL = new VictorSP (0);
 	private VictorSP IntakeR = new VictorSP (1);
 	//Declaring the way the robot will drive - RoboDrive class
@@ -65,7 +60,11 @@ public class Robot extends IterativeRobot implements PIDOutput
 	boolean getButtonB_Operator;
 	boolean getButtonLB_Operator;
 	boolean getButtonLT_Operator;
-
+	
+	//need to set variables to use PCM
+	private Compressor air = new Compressor(0);
+	private boolean pressureSwitch;
+	
 	//Declaring Buttons for the pistons
 	private DoubleSolenoid claw = new DoubleSolenoid (1,0);
 
@@ -73,7 +72,7 @@ public class Robot extends IterativeRobot implements PIDOutput
 	String gameData;
 
 	//Declaring a timer for autonomous timings
-	Timer autoTimer;
+	Timer autoTimer = new Timer();;
 
 	//Declaring positions for starting autonomous
 	boolean MIDDLE, LEFT, RIGHT, DO_NOTHING;
@@ -102,72 +101,58 @@ public class Robot extends IterativeRobot implements PIDOutput
 		 */
 
 		//The robot's claw is set to closed because it will be holding a cube when turned on
-		close();
+		ClawClose();
+		
+		//pneumatics variables
+		pressureSwitch = air.getPressureSwitchValue();
 	}
 
 	public void autonomousInit() 
 	{
 		ahrs.reset();
 		gameData = DriverStation.getInstance().getGameSpecificMessage();
-		autoTimer = new Timer();
 		MIDDLE = true;
-		close();
-		Timer.delay(1.0);
-		autoTimer.reset();
-		autoTimer.start();
 	}
 
 	public void autonomousPeriodic()
-	{	
-		normal();
-		
-		//attempt for the navx displacement methods FAIL INACCURATE
-		/*		
-		if (ahrs.getDisplacementY() < 3.1){
-			drivetrain.driveCartesian(-0.4, 0.0,forwardPID(), 0.0);
+	{
+		//get air for pneumatics
+		if (pressureSwitch == false) {
+			air.setClosedLoopControl(true);
 		}
+			
 		
+		frontLeftDrive.set(0.4 + forwardPID());
+		backLeftDrive.set(0.55 - forwardPID());
+		backRightDrive.set(-0.4 + forwardPID());
+		frontRightDrive.set(-0.55 - forwardPID());
 		
-		//CASE 1 SORRY JOHN THIS IS INACCURATE		//The robot drives 78" at half speed 4.02s to gain 1rp - 1.77 full speed
-		
-		if(MIDDLE && gameData.charAt(0) == 'L')
+		//drivetrain.driveCartesian(0.0, 0.0, forwardPID(), 0.0);
+
+		//attempt for the navx displacement methods FAIL INACCURATE
+
+		/*if (ahrs.getDisplacementY() < 3.1){
+			drivetrain.driveCartesian(-0.4, 0.0, forwardPID(), 0.0);
+		} */
+
+
+		//CASE 1
+		//The robot drives 78" at half speed 4.02s to gain 1rp - 1.77 full speed
+
+		/* if(MIDDLE && gameData.charAt(0) == 'L')
 		{
 			//DRIVE FORWARD 98"
-			if(autoTimer.get() < 1.25 && autoTimer.get() > 0)
+			if(autoTimer.get() < 1.0 && autoTimer.get() > 0)
 			{
 				drivetrain.driveCartesian(-0.5, 0.0, forwardPID(), 0.0);
 			}
+		} */
+		
+		//stop taking air when pneumatics reaches 120 psi
+				if (pressureSwitch == true) {
+					air.setClosedLoopControl(false);
+				}
 
-			//DRIVE LEFT 48"
-			if(autoTimer.get() < 4.67179 && autoTimer.get() > 2.25641)
-			{
-				drivetrain.driveCartesian(0.0, 0.3, forwardPID(), 0.0);
-			}
-
-			//DRIVE FORWARD 46"
-			if(autoTimer.get() < 7.9794 && autoTimer.get() > 5.2)
-			{
-				drivetrain.driveCartesian(-0.3, 0.0, forwardPID(), 0.0);
-			}
-
-			//SPITTS OUT CUBE ONTO SWITCH
-			if(autoTimer.get() < 9.0 && autoTimer.get() > 8.1)
-			{
-				out();
-			}
-
-			//DRIVE LEFT 36"
-			if(autoTimer.get() < 12.4 && autoTimer.get() > 9.8)
-			{
-				drivetrain.driveCartesian(0.0, 0.3, forwardPID(), 0.0);
-			}
-
-			if(autoTimer.get() < 14.1 && autoTimer.get() > 12.7)
-			{
-				drivetrain.driveCartesian(-0.35, 0.0, forwardPID(), 0.0);
-			}
-		}
-		*/
 	}
 
 	public void teleopPeriodic() 
@@ -186,6 +171,11 @@ public class Robot extends IterativeRobot implements PIDOutput
 		getButtonLB_Operator = rotateStick.getButton(LogitechDualAction.LogitechButton.LEFT_BUMPER);
 		getButtonLT_Operator = rotateStick.getButton(LogitechDualAction.LogitechButton.LEFT_TRIGGER);
 
+		//get air for pneumatics
+				if (pressureSwitch == false) {
+					air.setClosedLoopControl(true);
+				}
+		
 		//gets yaw from gyro continuously
 		angle = ahrs.getYaw();
 
@@ -239,25 +229,30 @@ public class Robot extends IterativeRobot implements PIDOutput
 		//Left Bumper intakes, Left Trigger spits out cube 
 		if(getButtonLT_Operator)
 		{
-			out();
+			ClawOutput();
 		}
 		else if (getButtonLB_Operator) 
 		{
-			in();
+			ClawIntake();
 		}else {		// The motors are always pulling in the cube so wont fly out when turning
-			normal();
+			ClawStandby();
 		}
 
 		//Setting positions for the pistons
 		//(A) closes the claw, (B) opens the claw
 		if(getButtonA_Operator) 
 		{
-			close();
+			ClawClose();
 		}
 		else if(getButtonB_Operator) 
 		{
-			open();
+			ClawOpen();
 		}
+		
+		//stop taking air when pneumatics reaches 120 psi
+				if (pressureSwitch == true) {
+					air.setClosedLoopControl(false);
+				}
 	}
 
 	public void pidWrite(double output) 
@@ -294,36 +289,36 @@ public class Robot extends IterativeRobot implements PIDOutput
 		return rotateToAngleRate;
 	}
 	//Intakes the cube
-	private void in()
+	private void ClawIntake()
 	{
 		IntakeL.set(0.5);
 		IntakeR.set(-0.5);
 	}
 	//Spits out the cube
-	private void out()
+	private void ClawOutput()
 	{
 		IntakeL.set(-0.5);
 		IntakeR.set(0.5);
 	}
 	//Motors pulling cube in lightly
-	private void normal()
+	private void ClawStandby()
 	{
 		IntakeL.set(0.15);
 		IntakeR.set(-0.15);
 	}
 
-	private void stop()
+	private void ClawStopWheels()
 	{
 		IntakeL.set(0.0);
 		IntakeR.set(0.0);
 	}
 	//Close claw
-	private void close()
+	private void ClawClose()
 	{
 		claw.set(DoubleSolenoid.Value.kForward);	
-	}
+	} 
 	//Open claw
-	private void open()
+	private void ClawOpen()
 	{
 		claw.set(DoubleSolenoid.Value.kReverse);
 	}

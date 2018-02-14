@@ -3,45 +3,54 @@ package ca.team3161.robot;
 import com.ctre.phoenix.motorcontrol.can.WPI_TalonSRX;
 import com.kauailabs.navx.frc.AHRS;
 
+import ca.team3161.lib.utils.controls.InvertedJoystickMode;
 import ca.team3161.lib.utils.controls.LogitechDualAction;
+import ca.team3161.lib.utils.controls.LogitechDualAction.LogitechAxis;
+import ca.team3161.lib.utils.controls.LogitechDualAction.LogitechControl;
+import ca.team3161.lib.utils.controls.SquaredJoystickMode;
 import edu.wpi.first.wpilibj.Compressor;
 import edu.wpi.first.wpilibj.DoubleSolenoid;
 import edu.wpi.first.wpilibj.DriverStation;
+import edu.wpi.first.wpilibj.I2C;
 import edu.wpi.first.wpilibj.IterativeRobot;
 import edu.wpi.first.wpilibj.PIDController;
 import edu.wpi.first.wpilibj.PIDOutput;
-import edu.wpi.first.wpilibj.SerialPort;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.VictorSP;
 import edu.wpi.first.wpilibj.drive.MecanumDrive;
-
+import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 
 public class Robot extends IterativeRobot implements PIDOutput 
 { 
 
 	//This is declaring the Motors with the corresponding Controllers
-	private WPI_TalonSRX backRightDrive = new WPI_TalonSRX(3);
-	private WPI_TalonSRX frontRightDrive = new WPI_TalonSRX(1);
 	private WPI_TalonSRX frontLeftDrive = new WPI_TalonSRX(0);
+	private WPI_TalonSRX frontRightDrive = new WPI_TalonSRX(1);
 	private WPI_TalonSRX backLeftDrive = new WPI_TalonSRX(2);
+	private WPI_TalonSRX backRightDrive = new WPI_TalonSRX(3);
 	private VictorSP IntakeL = new VictorSP (0);
 	private VictorSP IntakeR = new VictorSP (1);
+	private VictorSP pivot = new VictorSP (2);
+	private WPI_TalonSRX leftElevator = new WPI_TalonSRX (4);
+	private WPI_TalonSRX rightElevator = new WPI_TalonSRX (5);
+
 	//Declaring the way the robot will drive - RoboDrive class
 	private MecanumDrive drivetrain;
+
 	//Declaring the AHRS class to get gyro headings
 	private AHRS ahrs;
-	double angle;
+	private double angle;
 
 	//This is declaring both Controllers 
-	private LogitechDualAction driverpad = new LogitechDualAction(0);
-	private LogitechDualAction rotateStick = new LogitechDualAction(1);
+	private LogitechDualAction driverPad = new LogitechDualAction(0);
+	private LogitechDualAction operatorPad = new LogitechDualAction(1);
 
 	//For PID
 	double rotateToAngleRate;
 	double P = 0.02;
 	double I = 0.00;
 	double D = 0.06;
-	double kToleranceDegrees = 2.0f;
+	float kToleranceDegrees = 2;
 	PIDController turnController;
 	boolean rotateToAngle;
 	double currentRotationRate;
@@ -51,20 +60,21 @@ public class Robot extends IterativeRobot implements PIDOutput
 	double leftStickY;	 
 	double rightStickX;
 	double rightStickY;
+	double leftStickY_Operator;
 	boolean getButtonSTART;
 	boolean getButtonY;
 	boolean getButtonX;
 	boolean getButtonA;
-	boolean getButtonA_Operator;
-	boolean getButtonB;
 	boolean getButtonB_Operator;
+	boolean getButtonB;
 	boolean getButtonLB_Operator;
 	boolean getButtonLT_Operator;
-	
+	boolean getButotnRB_Operator;
+
 	//need to set variables to use PCM
 	private Compressor air = new Compressor(0);
 	private boolean pressureSwitch;
-	
+
 	//Declaring Buttons for the pistons
 	private DoubleSolenoid claw = new DoubleSolenoid (1,0);
 
@@ -72,29 +82,39 @@ public class Robot extends IterativeRobot implements PIDOutput
 	String gameData;
 
 	//Declaring a timer for autonomous timings
-	Timer autoTimer = new Timer();;
+	Timer autoTimer = new Timer();
 
 	//Declaring positions for starting autonomous
 	boolean MIDDLE, LEFT, RIGHT, DO_NOTHING;
 
 	public void robotInit() 
 	{
-		//Reads in gyro readings for USB
-		ahrs = new AHRS(SerialPort.Port.kUSB);
+		frontLeftDrive.setInverted(false);
+		frontRightDrive.setInverted(false);
+		backRightDrive.setInverted(false);
+		backLeftDrive.setInverted(false);
+
+		//Reads in gyro readings from I2C connections
+		ahrs = new AHRS(I2C.Port.kOnboard);
+
 		//Initiate the RoboDrive class, so that drivetrain variable can be used with the talons - driving controller
 		drivetrain = new MecanumDrive(frontLeftDrive, backLeftDrive, frontRightDrive, backRightDrive);
+
 		//Resetting the gyro reading for the rest of run time
 		ahrs.reset();
+
 		//Executes PID calculations
 		turnController = new PIDController(P, I, D, ahrs, this);
 		turnController.setInputRange(-180.0f,  180.0f);
 		turnController.setOutputRange(-1.0, 1.0);
 		turnController.setAbsoluteTolerance(kToleranceDegrees);
 		turnController.setContinuous(true);
+
 		//Initiate Encoders for all wheels
 		//NEED TO CONFIGURE CHANNELS TO EACH ENCODER
+		
+		//Encoder fLeft = new Encoder (0, 1);
 		/*
-		Encoder fLeft = new Encoder (0, 1, false, Encoder.EncodingType.k4X);
 		Encoder fRight = new Encoder (0, 1, false, Encoder.EncodingType.k4X);
 		Encoder bLeft = new Encoder (0, 1, false, Encoder.EncodingType.k4X);
 		Encoder bRight = new Encoder (0, 1, false, Encoder.EncodingType.k4X);
@@ -102,83 +122,72 @@ public class Robot extends IterativeRobot implements PIDOutput
 
 		//The robot's claw is set to closed because it will be holding a cube when turned on
 		ClawClose();
-		
-		//pneumatics variables
-		pressureSwitch = air.getPressureSwitchValue();
+
+		//with proper wiring, calibrates the talons using polarity inversions
+		driverPad.setMode(LogitechControl.LEFT_STICK, LogitechAxis.X, new SquaredJoystickMode());
+		driverPad.setMode(LogitechControl.LEFT_STICK, LogitechAxis.Y, new InvertedJoystickMode().andThen(new SquaredJoystickMode()));
+		driverPad.setMode(LogitechControl.RIGHT_STICK, LogitechAxis.X, new SquaredJoystickMode());
+	}
+	
+	public void disabledPeriodic() {
+		SmartDashboard.putNumber("gyro", ahrs.getYaw());
 	}
 
 	public void autonomousInit() 
 	{
 		ahrs.reset();
 		gameData = DriverStation.getInstance().getGameSpecificMessage();
-		MIDDLE = true;
 	}
 
 	public void autonomousPeriodic()
 	{
 		//get air for pneumatics
-		if (pressureSwitch == false) {
+		pressureSwitch = air.getPressureSwitchValue();
+		if (!pressureSwitch) 
+		{
 			air.setClosedLoopControl(true);
 		}
-			
-		
-		frontLeftDrive.set(0.4 + forwardPID());
-		backLeftDrive.set(0.55 - forwardPID());
-		backRightDrive.set(-0.4 + forwardPID());
-		frontRightDrive.set(-0.55 - forwardPID());
-		
-		//drivetrain.driveCartesian(0.0, 0.0, forwardPID(), 0.0);
+		drivetrain.driveCartesian(-0.5, 0.0, forwardPID(),0.0 );
 
-		//attempt for the navx displacement methods FAIL INACCURATE
-
-		/*if (ahrs.getDisplacementY() < 3.1){
-			drivetrain.driveCartesian(-0.4, 0.0, forwardPID(), 0.0);
-		} */
-
-
-		//CASE 1
-		//The robot drives 78" at half speed 4.02s to gain 1rp - 1.77 full speed
-
-		/* if(MIDDLE && gameData.charAt(0) == 'L')
-		{
-			//DRIVE FORWARD 98"
-			if(autoTimer.get() < 1.0 && autoTimer.get() > 0)
-			{
-				drivetrain.driveCartesian(-0.5, 0.0, forwardPID(), 0.0);
-			}
-		} */
-		
 		//stop taking air when pneumatics reaches 120 psi
-				if (pressureSwitch == true) {
-					air.setClosedLoopControl(false);
-				}
-
+		if (pressureSwitch) 
+		{
+			air.setClosedLoopControl(false);
+		}
 	}
 
 	public void teleopPeriodic() 
 	{
-		leftStickX = driverpad.getValue(LogitechDualAction.LogitechControl.LEFT_STICK, LogitechDualAction.LogitechAxis.X);
-		leftStickY = driverpad.getValue(LogitechDualAction.LogitechControl.LEFT_STICK, LogitechDualAction.LogitechAxis.Y);
-		rightStickX = driverpad.getValue(LogitechDualAction.LogitechControl.RIGHT_STICK, LogitechDualAction.LogitechAxis.X);
-		rightStickY = rotateStick.getValue(LogitechDualAction.LogitechControl.RIGHT_STICK, LogitechDualAction.LogitechAxis.Y);
-		getButtonSTART = driverpad.getButton(LogitechDualAction.LogitechButton.START);
-		getButtonY = driverpad.getButton(LogitechDualAction.LogitechButton.Y);
-		getButtonX = driverpad.getButton(LogitechDualAction.LogitechButton.X);
-		getButtonA = driverpad.getButton(LogitechDualAction.LogitechButton.A);
-		getButtonA_Operator = rotateStick.getButton(LogitechDualAction.LogitechButton.A);
-		getButtonB_Operator = rotateStick.getButton(LogitechDualAction.LogitechButton.B);
-		getButtonB = driverpad.getButton(LogitechDualAction.LogitechButton.B);
-		getButtonLB_Operator = rotateStick.getButton(LogitechDualAction.LogitechButton.LEFT_BUMPER);
-		getButtonLT_Operator = rotateStick.getButton(LogitechDualAction.LogitechButton.LEFT_TRIGGER);
-
-		//get air for pneumatics
-				if (pressureSwitch == false) {
-					air.setClosedLoopControl(true);
-				}
 		
+		leftStickX = driverPad.getValue(LogitechDualAction.LogitechControl.LEFT_STICK, LogitechDualAction.LogitechAxis.X);
+		leftStickY = driverPad.getValue(LogitechDualAction.LogitechControl.LEFT_STICK, LogitechDualAction.LogitechAxis.Y);
+		rightStickX = driverPad.getValue(LogitechDualAction.LogitechControl.RIGHT_STICK, LogitechDualAction.LogitechAxis.X);
+		rightStickY = operatorPad.getValue(LogitechDualAction.LogitechControl.RIGHT_STICK, LogitechDualAction.LogitechAxis.Y);
+		getButtonSTART = driverPad.getButton(LogitechDualAction.LogitechButton.START);
+		getButtonY = driverPad.getButton(LogitechDualAction.LogitechButton.Y);
+		getButtonX = driverPad.getButton(LogitechDualAction.LogitechButton.X);
+		getButtonA = driverPad.getButton(LogitechDualAction.LogitechButton.A);
+		getButtonB_Operator = operatorPad.getButton(LogitechDualAction.LogitechButton.B);
+		getButtonB = driverPad.getButton(LogitechDualAction.LogitechButton.B);
+		getButtonLB_Operator = operatorPad.getButton(LogitechDualAction.LogitechButton.LEFT_BUMPER);
+		getButtonLT_Operator = operatorPad.getButton(LogitechDualAction.LogitechButton.LEFT_TRIGGER);
+		leftStickY_Operator = operatorPad.getValue(LogitechDualAction.LogitechControl.LEFT_STICK, LogitechDualAction.LogitechAxis.Y);
+		getButotnRB_Operator = operatorPad.getButton(LogitechDualAction.LogitechButton.RIGHT_BUMPER);
+
+		  
+		SmartDashboard.putNumber("gyro", angle);
+		
+		
+		//get air for pneumatics
+		pressureSwitch = air.getPressureSwitchValue();
+		if (!pressureSwitch) 
+		{
+			air.setClosedLoopControl(true);
+		}
+
 		//gets yaw from gyro continuously
 		angle = ahrs.getYaw();
-
+		
 		//Dead band, restricts stick movement when less than 5% for all controls
 		if (Math.abs(rightStickX) < 0.05)
 		{
@@ -195,22 +204,27 @@ public class Robot extends IterativeRobot implements PIDOutput
 
 		//Preset angles for the robot - to be called with buttons A, B, X, Y
 		rotateToAngle = false;
-		if (getButtonSTART) {
+		if (getButtonSTART) 
+		{
 			ahrs.reset();
 		}
-		if (getButtonY) {
+		if (getButtonY) 
+		{
 			currentRotationRate = forwardPID();
 			rotateToAngle = true;
 		}
-		else if (getButtonB) {
+		else if (getButtonB) 
+		{
 			currentRotationRate = rightPID();
 			rotateToAngle = true;
 		}
-		else if (getButtonA) {
+		else if (getButtonA) 
+		{
 			currentRotationRate = backwardPID();
 			rotateToAngle = true;
 		}
-		else if (getButtonX) {
+		else if (getButtonX) 
+		{
 			currentRotationRate = leftPID();
 			rotateToAngle = true;
 		}
@@ -222,8 +236,7 @@ public class Robot extends IterativeRobot implements PIDOutput
 		}
 
 		//Calls upon the mecanumDrive_Cartesian method that sends specific power to the talons
-		//The rotation for the right stick is cut down by half
-		drivetrain.driveCartesian (leftStickY,-leftStickX, currentRotationRate * 0.5, angle);
+		drivetrain.driveCartesian (leftStickX, leftStickY, currentRotationRate * 0.5, -angle);
 
 		//Setting speeds for the claw's motors to intake or shoot out the cube
 		//Left Bumper intakes, Left Trigger spits out cube 
@@ -239,20 +252,44 @@ public class Robot extends IterativeRobot implements PIDOutput
 		}
 
 		//Setting positions for the pistons
-		//(A) closes the claw, (B) opens the claw
-		if(getButtonA_Operator) 
+		//Pressing (A) opens the claw, claw is closed at default
+		if(getButtonB_Operator)
+		{
+			ClawOpen();
+		}else
 		{
 			ClawClose();
 		}
-		else if(getButtonB_Operator) 
+
+		//Move the elevator up or down
+		if (leftStickY_Operator > 0.25)
 		{
-			ClawOpen();
+			ElevatorDown();
+		}else if (leftStickY_Operator < -0.25)
+		{
+			ElevatorUp();
+		}
+		else {
+			leftElevator.set(0);
+			rightElevator.set(0);
+		}
+			
+
+
+		//Stop taking air when pneumatics reaches 120 psi
+		if (pressureSwitch == true) 
+		{
+			air.setClosedLoopControl(false);
 		}
 		
-		//stop taking air when pneumatics reaches 120 psi
-				if (pressureSwitch == true) {
-					air.setClosedLoopControl(false);
-				}
+		//Right bumper on operator controller lowers claw when held, otherwise rotates up
+		if(getButotnRB_Operator)
+		{
+			ClawRotateUp();
+		}else
+		{
+			ClawRotateDown();
+		}
 	}
 
 	public void pidWrite(double output) 
@@ -300,18 +337,13 @@ public class Robot extends IterativeRobot implements PIDOutput
 		IntakeL.set(-0.5);
 		IntakeR.set(0.5);
 	}
-	//Motors pulling cube in lightly
+	//Motors pulling cube in lightly to prevent losing the cube 
 	private void ClawStandby()
 	{
 		IntakeL.set(0.15);
 		IntakeR.set(-0.15);
 	}
 
-	private void ClawStopWheels()
-	{
-		IntakeL.set(0.0);
-		IntakeR.set(0.0);
-	}
 	//Close claw
 	private void ClawClose()
 	{
@@ -322,5 +354,28 @@ public class Robot extends IterativeRobot implements PIDOutput
 	{
 		claw.set(DoubleSolenoid.Value.kReverse);
 	}
-
+	//Elevator Up
+	private void ElevatorUp()
+	{
+		leftElevator.set(-0.5);
+		rightElevator.set(0.5);
+	}
+	//Elevator Down
+	private void ElevatorDown()
+	{
+		leftElevator.set(0.5);
+		rightElevator.set(-0.5);
+	}
+	
+	//Claw Rotate Up - Standby Position
+	private void ClawRotateUp()
+	{
+		pivot.setSpeed(0.4);
+	}
+	
+	//Claw Rotate Down
+	private void ClawRotateDown()
+	{
+		pivot.setSpeed(-0.4);
+	}
 }

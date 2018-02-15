@@ -11,6 +11,7 @@ import ca.team3161.lib.utils.controls.SquaredJoystickMode;
 import edu.wpi.first.wpilibj.Compressor;
 import edu.wpi.first.wpilibj.DoubleSolenoid;
 import edu.wpi.first.wpilibj.DriverStation;
+import edu.wpi.first.wpilibj.Encoder;
 import edu.wpi.first.wpilibj.I2C;
 import edu.wpi.first.wpilibj.IterativeRobot;
 import edu.wpi.first.wpilibj.PIDController;
@@ -65,11 +66,11 @@ public class Robot extends IterativeRobot implements PIDOutput
 	boolean getButtonY;
 	boolean getButtonX;
 	boolean getButtonA;
-	boolean getButtonB_Operator;
 	boolean getButtonB;
+	boolean getButtonRT_Operator;
 	boolean getButtonLB_Operator;
 	boolean getButtonLT_Operator;
-	boolean getButotnRB_Operator;
+	double rightStickY_Operator;
 
 	//need to set variables to use PCM
 	private Compressor air = new Compressor(0);
@@ -113,7 +114,8 @@ public class Robot extends IterativeRobot implements PIDOutput
 		//Initiate Encoders for all wheels
 		//NEED TO CONFIGURE CHANNELS TO EACH ENCODER
 		
-		//Encoder fLeft = new Encoder (0, 1);
+		//Encoder Elevator_left = new Encoder (4, 1, false, Encoder.EncodingType.k4X);
+		//Encoder Elevator_right = new Encoder (5,1, false, Encoder.EncodingType.k4X);
 		/*
 		Encoder fRight = new Encoder (0, 1, false, Encoder.EncodingType.k4X);
 		Encoder bLeft = new Encoder (0, 1, false, Encoder.EncodingType.k4X);
@@ -137,18 +139,23 @@ public class Robot extends IterativeRobot implements PIDOutput
 	{
 		ahrs.reset();
 		gameData = DriverStation.getInstance().getGameSpecificMessage();
+		autoTimer.start();
 	}
 
 	public void autonomousPeriodic()
 	{
+		
 		//get air for pneumatics
 		pressureSwitch = air.getPressureSwitchValue();
 		if (!pressureSwitch) 
 		{
 			air.setClosedLoopControl(true);
 		}
-		drivetrain.driveCartesian(-0.5, 0.0, forwardPID(),0.0 );
-
+		
+		if (autoTimer.get() < 4.0 && autoTimer.get() > 0.0){
+		drivetrain.driveCartesian(0.0, 0.25, forwardPID(),0.0 );
+		}
+	
 		//stop taking air when pneumatics reaches 120 psi
 		if (pressureSwitch) 
 		{
@@ -162,17 +169,16 @@ public class Robot extends IterativeRobot implements PIDOutput
 		leftStickX = driverPad.getValue(LogitechDualAction.LogitechControl.LEFT_STICK, LogitechDualAction.LogitechAxis.X);
 		leftStickY = driverPad.getValue(LogitechDualAction.LogitechControl.LEFT_STICK, LogitechDualAction.LogitechAxis.Y);
 		rightStickX = driverPad.getValue(LogitechDualAction.LogitechControl.RIGHT_STICK, LogitechDualAction.LogitechAxis.X);
-		rightStickY = operatorPad.getValue(LogitechDualAction.LogitechControl.RIGHT_STICK, LogitechDualAction.LogitechAxis.Y);
 		getButtonSTART = driverPad.getButton(LogitechDualAction.LogitechButton.START);
 		getButtonY = driverPad.getButton(LogitechDualAction.LogitechButton.Y);
 		getButtonX = driverPad.getButton(LogitechDualAction.LogitechButton.X);
 		getButtonA = driverPad.getButton(LogitechDualAction.LogitechButton.A);
-		getButtonB_Operator = operatorPad.getButton(LogitechDualAction.LogitechButton.B);
+		getButtonRT_Operator = operatorPad.getButton(LogitechDualAction.LogitechButton.RIGHT_TRIGGER);
 		getButtonB = driverPad.getButton(LogitechDualAction.LogitechButton.B);
 		getButtonLB_Operator = operatorPad.getButton(LogitechDualAction.LogitechButton.LEFT_BUMPER);
 		getButtonLT_Operator = operatorPad.getButton(LogitechDualAction.LogitechButton.LEFT_TRIGGER);
 		leftStickY_Operator = operatorPad.getValue(LogitechDualAction.LogitechControl.LEFT_STICK, LogitechDualAction.LogitechAxis.Y);
-		getButotnRB_Operator = operatorPad.getButton(LogitechDualAction.LogitechButton.RIGHT_BUMPER);
+		rightStickY_Operator = operatorPad.getValue(LogitechDualAction.LogitechControl.RIGHT_STICK, LogitechDualAction.LogitechAxis.Y );
 
 		  
 		SmartDashboard.putNumber("gyro", angle);
@@ -252,8 +258,8 @@ public class Robot extends IterativeRobot implements PIDOutput
 		}
 
 		//Setting positions for the pistons
-		//Pressing (A) opens the claw, claw is closed at default
-		if(getButtonB_Operator)
+		//Pressing Right Trigger opens the claw, claw is closed at default
+		if(getButtonRT_Operator)
 		{
 			ClawOpen();
 		}else
@@ -283,7 +289,7 @@ public class Robot extends IterativeRobot implements PIDOutput
 		}
 		
 		//Right bumper on operator controller lowers claw when held, otherwise rotates up
-		if(getButotnRB_Operator)
+		if(rightStickY > 0.25)
 		{
 			ClawRotateUp();
 		}else

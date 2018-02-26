@@ -2,6 +2,7 @@ package ca.team3161.robot;
 
 import com.ctre.phoenix.motorcontrol.ControlMode;
 import com.ctre.phoenix.motorcontrol.FeedbackDevice;
+import com.ctre.phoenix.motorcontrol.StatusFrameEnhanced;
 import com.ctre.phoenix.motorcontrol.can.WPI_TalonSRX;
 import com.kauailabs.navx.frc.AHRS;
 import ca.team3161.lib.utils.controls.InvertedJoystickMode;
@@ -16,10 +17,12 @@ import edu.wpi.first.wpilibj.Encoder;
 import edu.wpi.first.wpilibj.IterativeRobot;
 import edu.wpi.first.wpilibj.PIDController;
 import edu.wpi.first.wpilibj.PIDOutput;
+import edu.wpi.first.wpilibj.PIDSource;
 import edu.wpi.first.wpilibj.SPI;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.VictorSP;
 import edu.wpi.first.wpilibj.drive.MecanumDrive;
+import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 
 public class Robot extends IterativeRobot implements PIDOutput 
 { 
@@ -30,8 +33,7 @@ public class Robot extends IterativeRobot implements PIDOutput
 	private WPI_TalonSRX backRightDrive = new WPI_TalonSRX(3);
 	private VictorSP IntakeL = new VictorSP (3);
 	private VictorSP IntakeR = new VictorSP (2);
-	private VictorSP pivotL = new VictorSP (1);
-	private VictorSP pivotR = new VictorSP (0);
+	private VictorSP pivot = new VictorSP (0);
 	private WPI_TalonSRX leftElevator = new WPI_TalonSRX (4);
 	private WPI_TalonSRX rightElevator = new WPI_TalonSRX (5);
 
@@ -46,7 +48,7 @@ public class Robot extends IterativeRobot implements PIDOutput
 	private LogitechDualAction driverPad = new LogitechDualAction(0);
 	private LogitechDualAction operatorPad = new LogitechDualAction(1);
 
-	//For PID
+	//For drive train PID
 	double rotateToAngleRate;
 	double P = 0.02;
 	double I = 0.00;
@@ -54,9 +56,11 @@ public class Robot extends IterativeRobot implements PIDOutput
 	float kToleranceDegrees = 2;
 	PIDController turnController;
 	boolean rotateToAngle;
-	double rotateToHeight;
 	double currentRotationRate;
-	double height;
+	
+	//For elevator PID
+	PIDController elevatorController;
+	boolean rotatetoHeight;
 
 	//Configures all the Joysticks and Buttons for both controllers
 	double leftStickX;
@@ -88,8 +92,9 @@ public class Robot extends IterativeRobot implements PIDOutput
 	Timer autoTimer = new Timer();
 
 	//Declaring positions for starting autonomous
-	boolean MIDDLE, LEFT, RIGHT, DO_NOTHING;
-
+	boolean MIDDLE = false, LEFT = false, RIGHT = false;
+	double ticks = 0;
+	
 	//A counter for running the claw's intake after the claw closes
 	private int c = 0;
 
@@ -115,12 +120,9 @@ public class Robot extends IterativeRobot implements PIDOutput
 		turnController.setOutputRange(-1.0, 1.0);
 		turnController.setAbsoluteTolerance(kToleranceDegrees);
 		turnController.setContinuous(true);
-
-		//Initiate Encoders for all wheels
-		//NEED TO CONFIGURE CHANNELS TO EACH ENCODER
-
-		//Encoder Elevator_left = new Encoder (4, 1, false, Encoder.EncodingType.k4X);
-		//Encoder Elevator_right = new Encoder (5,1, false, Encoder.EncodingType.k4X);
+		
+		//Executes PID calculations for elevator
+		elevatorController = new PIDController(P, I, D, (PIDSource) leftElevator, this);
 
 		//The robot's claw is set to closed because it will be holding a cube when turned on
 		ClawClose();
@@ -129,6 +131,23 @@ public class Robot extends IterativeRobot implements PIDOutput
 		driverPad.setMode(LogitechControl.LEFT_STICK, LogitechAxis.X, new SquaredJoystickMode());
 		driverPad.setMode(LogitechControl.LEFT_STICK, LogitechAxis.Y, new InvertedJoystickMode().andThen(new SquaredJoystickMode()));
 		driverPad.setMode(LogitechControl.RIGHT_STICK, LogitechAxis.X, new SquaredJoystickMode());
+
+		//Configuring settings for the elevator encoders
+
+
+		//Configuring settings for wheel encoders
+		frontLeftDrive.set(ControlMode.Position, 0);
+		frontLeftDrive.configSelectedFeedbackSensor(FeedbackDevice.QuadEncoder, 0, 0);
+		frontRightDrive.set(ControlMode.Position, 1);
+		frontRightDrive.configSelectedFeedbackSensor(FeedbackDevice.QuadEncoder, 1, 0);
+		backLeftDrive.set(ControlMode.Position, 2);
+		backLeftDrive.configSelectedFeedbackSensor(FeedbackDevice.QuadEncoder, 2, 0);
+		backRightDrive.set(ControlMode.Position, 3);
+		backRightDrive.configSelectedFeedbackSensor(FeedbackDevice.QuadEncoder, 3, 0);
+		
+		//Configuring elevator encoders
+		leftElevator.set(ControlMode.Position, 0);;
+		leftElevator.configSelectedFeedbackSensor(FeedbackDevice.QuadEncoder, 0, 0);
 	}
 
 	public void autonomousInit() 
@@ -136,14 +155,13 @@ public class Robot extends IterativeRobot implements PIDOutput
 		ahrs.reset();
 		gameData = DriverStation.getInstance().getGameSpecificMessage();
 		autoTimer.start();
-
-		//for smartdashboard
-		//autoCommand = (Command) autoChooser.getSelected();
-		//autoCommand.start();
 	}
 
 	public void autonomousPeriodic()
 	{
+		driverPad.setMode(LogitechControl.LEFT_STICK, LogitechAxis.X, new SquaredJoystickMode());
+		driverPad.setMode(LogitechControl.LEFT_STICK, LogitechAxis.Y, new InvertedJoystickMode().andThen(new SquaredJoystickMode()));
+		driverPad.setMode(LogitechControl.RIGHT_STICK, LogitechAxis.X, new SquaredJoystickMode());
 
 		//get air for pneumatics
 		pressureSwitch = air.getPressureSwitchValue();
@@ -152,33 +170,10 @@ public class Robot extends IterativeRobot implements PIDOutput
 			air.setClosedLoopControl(true);
 		}
 
-		if (autoTimer.get() < 4.0 && autoTimer.get() > 0.0){
-			drivetrain.driveCartesian(0.0, 0.25, forwardPID(),0.0 );
-		}	
-
-		//CL test case
-		if(autoTimer.get() < 4.67179 && autoTimer.get() > 2.25641)
+		//CL
+		if(MIDDLE && gameData.charAt(0) == 'f')
 		{
-			drivetrain.driveCartesian(0.0, -0.3, forwardPID(), 0.0);
-		}
-		if(autoTimer.get() < 4.67179 && autoTimer.get() > 2.25641)
-		{
-			drivetrain.driveCartesian(0.3, 0.0, forwardPID(), 0.0);
-		}
-		if(autoTimer.get() < 7.9794 && autoTimer.get() > 5.2)
-		{
-			drivetrain.driveCartesian(0.0, -0.3, forwardPID(), 0.0);
-		}
-		if(autoTimer.get() < 9.0 && autoTimer.get() > 8.1)
-		{
-			ClawOutput();
-		}if(autoTimer.get() < 12.4 && autoTimer.get() > 9.8)
-		{
-			drivetrain.driveCartesian(0.3, 0.0, forwardPID(), 0.0);
-		}
-		if(autoTimer.get() < 14.1 && autoTimer.get() > 12.7)
-		{
-			drivetrain.driveCartesian(0.0, -0.35, forwardPID(), 0.0);
+			
 		}
 
 		//stop taking air when pneumatics reaches 120 psi
@@ -204,6 +199,7 @@ public class Robot extends IterativeRobot implements PIDOutput
 		getButtonLT_Operator = operatorPad.getButton(LogitechDualAction.LogitechButton.LEFT_TRIGGER);
 		leftStickY_Operator = operatorPad.getValue(LogitechDualAction.LogitechControl.LEFT_STICK, LogitechDualAction.LogitechAxis.Y);
 		rightStickY_Operator = operatorPad.getValue(LogitechDualAction.LogitechControl.RIGHT_STICK, LogitechDualAction.LogitechAxis.Y );
+
 
 		//gets yaw from gyro continuously
 		angle = ahrs.getYaw();
@@ -275,7 +271,6 @@ public class Robot extends IterativeRobot implements PIDOutput
 			ClawStandby();
 		}
 
-
 		//Setting positions for the pistons
 		//Pressing Right Trigger opens the claw, claw is closed at default
 		if(getButtonRT_Operator)
@@ -286,7 +281,7 @@ public class Robot extends IterativeRobot implements PIDOutput
 		}else
 		{
 			c++;
-			if(c <= 50)
+			if(c <= 60)
 			{
 				ClawIntake();
 			}
@@ -294,7 +289,7 @@ public class Robot extends IterativeRobot implements PIDOutput
 			{
 				c = 0;
 			}
-				ClawClose();
+			ClawClose();
 		}
 
 		//Move the elevator up or down
@@ -307,8 +302,9 @@ public class Robot extends IterativeRobot implements PIDOutput
 		}
 		else 
 		{
-			//height = leftElevator.get();
-			ElevatorHold();
+			elevatorController.setSetpoint(leftElevator.getSelectedSensorPosition(0));
+			elevatorController.enable();
+			leftStickY_Operator = rotateToAngleRate;
 		}
 
 		//Stop taking air when pneumatics reaches 120 psi
@@ -383,8 +379,8 @@ public class Robot extends IterativeRobot implements PIDOutput
 	//Motors pulling cube in lightly to prevent losing the cube 
 	private void ClawStandby()
 	{
-		IntakeL.set(0.15);
-		IntakeR.set(-0.15);
+		IntakeL.set(0.1);
+		IntakeR.set(-0.1);
 	}
 
 	//Close claw
@@ -422,21 +418,160 @@ public class Robot extends IterativeRobot implements PIDOutput
 	//Claw Rotate Up
 	private void ClawRotateUp()
 	{
-		pivotL.set(0.6);
-		pivotR.set(-0.6);
+		pivot.set(0.6);
 	}
 
 	//Claw Rotate Down
 	private void ClawRotateDown()
 	{
-		pivotL.set(-0.6);
-		pivotR.set(0.6);
+		pivot.set(-0.6);
 	}
 
 	//Claw motors are stopped
 	private void ClawHold()
 	{
-		pivotL.set(0.0);
-		pivotR.set(0.0);
+		pivot.set(0.0);
+	}
+
+	//Driving forward using encoders
+	private int driveForward(double ticks, double speed, char orientation)
+	{
+		double currentRotationRate = 0;
+		if(orientation == 'f')
+		{
+			currentRotationRate = forwardPID();
+		}else if(orientation == 'l')
+		{
+			currentRotationRate = leftPID();
+		}
+		else if(orientation == 'r')
+		{
+			currentRotationRate = rightPID();
+		}else if(orientation == 'b')
+		{
+			currentRotationRate = backwardPID();
+		}
+
+		if(wheelRotations() < ticks)
+		{
+			drivetrain.driveCartesian(0.0, speed, currentRotationRate, 0);
+		}
+		
+		//Regulates if the number of ticks is completed
+		if(frontLeftDrive.getSelectedSensorPosition(0) >= ticks)
+		{
+			return 1;
+		}else
+		{
+			return 0;
+		}
+	}
+
+	//Driving left using encoders
+	private int driveLeft(double ticks, double speed, char orientation)
+	{
+		double currentRotationRate = 0;
+		if(orientation == 'f')
+		{
+			currentRotationRate = forwardPID();
+		}else if(orientation == 'l')
+		{
+			currentRotationRate = leftPID();
+		}
+		else if(orientation == 'r')
+		{
+			currentRotationRate = rightPID();
+		}else if(orientation == 'b')
+		{
+			currentRotationRate = backwardPID();
+		}
+
+		if(wheelRotations() < ticks)
+		{
+			drivetrain.driveCartesian(speed, 0.0, currentRotationRate, 0);
+		}
+		
+		//Regulates if the number of ticks is completed
+		if(frontLeftDrive.getSelectedSensorPosition(0) >= ticks)
+		{
+			return 1;
+		}else
+		{
+			return 0;
+		}
+	}
+
+	//Driving right using encoders
+	private int driveRight(double ticks, double speed, char orientation)
+	{
+		double currentRotationRate = 0;
+		if(orientation == 'f')
+		{
+			currentRotationRate = forwardPID();
+		}else if(orientation == 'l')
+		{
+			currentRotationRate = leftPID();
+		}
+		else if(orientation == 'r')
+		{
+			currentRotationRate = rightPID();
+		}else if(orientation == 'b')
+		{
+			currentRotationRate = backwardPID();
+		}
+
+		if(wheelRotations() < ticks)
+		{
+			drivetrain.driveCartesian(-speed, 0.0, currentRotationRate, 0);
+		}
+		
+		//Regulates if the number of ticks is completed
+		if(frontLeftDrive.getSelectedSensorPosition(0) >= ticks)
+		{
+			return 1;
+		}else
+		{
+			return 0;
+		}
+	}
+
+	//Driving forward using encoders
+	private int driveBackward(double ticks, double speed, char orientation)
+	{
+		double currentRotationRate = 0;
+		if(orientation == 'f')
+		{
+			currentRotationRate = forwardPID();
+		}else if(orientation == 'l')
+		{
+			currentRotationRate = leftPID();
+		}
+		else if(orientation == 'r')
+		{
+			currentRotationRate = rightPID();
+		}else if(orientation == 'b')
+		{
+			currentRotationRate = backwardPID();
+		}
+
+		if(wheelRotations() < ticks)
+		{
+			drivetrain.driveCartesian(0.0, -speed, currentRotationRate, 0);
+		}
+		
+		//Regulates if the number of ticks is completed
+		if(frontLeftDrive.getSelectedSensorPosition(0) >= ticks)
+		{
+			return 1;
+		}else
+		{
+			return 0;
+		}
+	}
+	
+	//Returns the average wheel rotations from all four wheels
+	private double wheelRotations()
+	{
+		return (frontLeftDrive.getSelectedSensorPosition(0) + frontRightDrive.getSelectedSensorPosition(1) + backLeftDrive.getSelectedSensorPosition(2) +  backRightDrive.getSelectedSensorPosition(3)) / 4;
 	}
 }

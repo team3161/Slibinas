@@ -26,9 +26,9 @@ import edu.wpi.first.wpilibj.drive.MecanumDrive;
 import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 
-public class Robot extends IterativeRobot implements PIDOutput
+public class Robot extends IterativeRobot
 { 
-	//This is declaring the Motors with the corresponding Controllers
+	//This is declaring the motors with the corresponding Controllers
 	private WPI_TalonSRX frontLeftDrive = new WPI_TalonSRX(0);
 	private WPI_TalonSRX frontRightDrive = new WPI_TalonSRX(1);
 	private WPI_TalonSRX backLeftDrive = new WPI_TalonSRX(2);
@@ -63,27 +63,27 @@ public class Robot extends IterativeRobot implements PIDOutput
 	//For drive train - wheel rotations
 	//Front Left
 	PIDController FLController;
-	double P0 = 0.02;
-	double I0 = 0.00;
-	double D0 = 0.06;
+	double P0 = 0.0003;
+	double I0 = 0.0;
+	double D0 = 0.0001;
 	double FLSpeed;
 	//Front Right
 	PIDController FRController;
-	double P1 = 0.02;
-	double I1 = 0.00;
-	double D1 = 0.06;
+	double P1 = 0.0003;
+	double I1 = 0.0;
+	double D1 = 0.0001;
 	double FRSpeed;
 	//Back Left
 	PIDController BLController;
-	double P2 = 0.02;
-	double I2 = 0.00;
-	double D2 = 0.06;
+	double P2 = 0.0003;
+	double I2 = 0.0;
+	double D2 = 0.0001;
 	double BLSpeed;
 	//Back Right
 	PIDController BRController;
-	double P3 = 0.02;
-	double I3 = 0.00;
-	double D3 = 0.06;
+	double P3 = 0.0003;
+	double I3 = 0.0;
+	double D3 = 0.0001;
 	double BRSpeed;
 
 	//For elevator PID
@@ -163,40 +163,32 @@ public class Robot extends IterativeRobot implements PIDOutput
 		turnController.setInputRange(-180.0f,  180.0f);
 		turnController.setOutputRange(-1.0, 1.0);
 		turnController.setAbsoluteTolerance(kToleranceDegrees);
-		turnController.setContinuous(true);
+		turnController.setContinuous(true);		
 
 		//Executes PID calculations for wheel rotations - Front Left
-		FLController = new PIDController(P0, I0, D0, new TalonSrxPIDSource(frontLeftDrive), this::frontLeftPidWrite);
+		FLController = new PIDController(P0, I0, D0, new TalonSrxPIDSource(frontLeftDrive, 0), this::frontLeftPidWrite);
 		FLController.setInputRange(-100000, 100000);
 		FLController.setOutputRange(-1.0, 1.0);
-		FLController.setAbsoluteTolerance(kToleranceDegrees);
+		FLController.setAbsoluteTolerance(800);
+		
 
 		//Executes PID calculations for wheel rotations - Front Right
-		FRController = new PIDController(P1, I1, D1, new TalonSrxPIDSource(frontRightDrive), this::frontRightPidWrite);
+		FRController = new PIDController(P1, I1, D1, new TalonSrxPIDSource(frontRightDrive, 1), this::frontRightPidWrite);
 		FRController.setInputRange(-100000, 100000);
 		FRController.setOutputRange(-1.0, 1.0);
 		FRController.setAbsoluteTolerance(kToleranceDegrees);
 
 		//Executes PID calculations for wheel rotations - Back Left
-		BLController = new PIDController(P2, I2, D2, new TalonSrxPIDSource(backLeftDrive), this::backLeftPidWrite);
+		BLController = new PIDController(P2, I2, D2, new TalonSrxPIDSource(backLeftDrive, 2), this::backLeftPidWrite);
 		BLController.setInputRange(-100000, 100000);
 		BLController.setOutputRange(-1.0, 1.0);
 		BLController.setAbsoluteTolerance(kToleranceDegrees);
 
 		//Executes PID calculations for wheel rotations - Back Right
-		BRController = new PIDController(P3, I3, D3, new TalonSrxPIDSource(backRightDrive), this::backRightPidWrite);
+		BRController = new PIDController(P3, I3, D3, new TalonSrxPIDSource(backRightDrive, 3), this::backRightPidWrite);
 		BRController.setInputRange(-100000, 100000);
 		BRController.setOutputRange(-1.0, 1.0);
 		BRController.setAbsoluteTolerance(kToleranceDegrees);
-
-
-		//Executes PID calculations for wheel rotations - Y Direction
-		/*
-		FRController = new PIDController(Py, Iy, Dy, ahrs, this);
-		FRController.setInputRange(-100000, 100000);
-		FRController.setOutputRange(-1.0,  1.0);
-		FRController.setAbsoluteTolerance(kToleranceDegrees);
-		 */
 
 
 		//WHEN LEFT SIDE WHEELS ROTATE FORWARDS OVER THE TOP, ENCODERS APPROACH -INFINITY
@@ -215,9 +207,6 @@ public class Robot extends IterativeRobot implements PIDOutput
 
 		//Configuring settings for the elevator encoders
 
-		//Configuring elevator encoders
-		//leftElevator.set(ControlMode.Position, 0);;
-		//leftElevator.configSelectedFeedbackSensor(FeedbackDevice.QuadEncoder, 0, 0);
 	}
 
 	public void autonomousInit() 
@@ -226,14 +215,12 @@ public class Robot extends IterativeRobot implements PIDOutput
 		gameData = DriverStation.getInstance().getGameSpecificMessage();
 		resetEncoders();
 		autoTimer.start();
+		FLController.setSetpoint(5000);
+		FLController.enable();
 	}
 
 	public void autonomousPeriodic()
 	{
-		driverPad.setMode(LogitechControl.LEFT_STICK, LogitechAxis.X, new SquaredJoystickMode());
-		driverPad.setMode(LogitechControl.LEFT_STICK, LogitechAxis.Y, new InvertedJoystickMode().andThen(new SquaredJoystickMode()));
-		driverPad.setMode(LogitechControl.RIGHT_STICK, LogitechAxis.X, new SquaredJoystickMode());
-
 		//get air for pneumatics
 		/*pressureSwitch = air.getPressureSwitchValue();
 		if (!pressureSwitch) 
@@ -241,9 +228,7 @@ public class Robot extends IterativeRobot implements PIDOutput
 			air.setClosedLoopControl(true);
 		}
 
-		 */		
-		FLController.setSetpoint(1000.0f);
-		FLController.setEnabled(true);
+		 */	
 		frontLeftDrive.set(-FLSpeed);
 		/*
 		if(MIDDLE && gameData.charAt(0) == 'L')
@@ -445,6 +430,7 @@ public class Robot extends IterativeRobot implements PIDOutput
 	public void pidWrite(double output) 
 	{
 		rotate = output;
+		SmartDashboard.putNumber("GYRO", rotate);
 	}
 
 	public void frontLeftPidWrite(double speed0)

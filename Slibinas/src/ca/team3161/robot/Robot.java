@@ -16,10 +16,6 @@ import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.I2C;
 import edu.wpi.first.wpilibj.IterativeRobot;
 import edu.wpi.first.wpilibj.PIDController;
-import edu.wpi.first.wpilibj.PIDOutput;
-import edu.wpi.first.wpilibj.PIDSource;
-
-import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.VictorSP;
 import edu.wpi.first.wpilibj.command.Command;
 import edu.wpi.first.wpilibj.drive.MecanumDrive;
@@ -786,24 +782,29 @@ public class Robot extends IterativeRobot
 		return 0;
 	}
 
+	//Resets all encoders
 	private void resetAllEncoders()
 	{
 		frontLeftDrive.setSelectedSensorPosition(0, 0, 10);
 		frontRightDrive.setSelectedSensorPosition(0, 0, 10);
 		backLeftDrive.setSelectedSensorPosition(0, 0, 10);
 		backRightDrive.setSelectedSensorPosition(0, 0, 10);
+		rightElevator.setSelectedSensorPosition(0, 0, 10);
 	}
 
+	//Returns the tick count from encoders
 	private double getTicks(WPI_TalonSRX talon)
 	{
 		return talon.getSelectedSensorPosition(0);
 	}
 
+	//Returns velocity from encoders
 	private double getVelocity(WPI_TalonSRX talon)
 	{
 		return talon.getSelectedSensorVelocity(0);
 	}
 
+	//Displays information on smart dash board
 	private void showDisplay()
 	{
 		SmartDashboard.putNumber("Front Left Encoder:", frontLeftDrive.getSelectedSensorPosition(0));

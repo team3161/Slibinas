@@ -35,9 +35,10 @@ public class Robot extends IterativeRobot
 	private WPI_TalonSRX backRightDrive = new WPI_TalonSRX(3);
 	private VictorSP IntakeL = new VictorSP (3);
 	private VictorSP IntakeR = new VictorSP (2);
-	private VictorSP pivot = new VictorSP (0);
+	private VictorSP pivot = new VictorSP (1);
 	private WPI_TalonSRX leftElevator = new WPI_TalonSRX (4);
-	private WPI_TalonSRX rightElevator = new WPI_TalonSRX (5);
+	private VictorSP leftElevatorSlave = new VictorSP(0);
+	private WPI_TalonSRX rightElevator = new WPI_TalonSRX (6);
 
 	//Declaring the way the robot will drive - RoboDrive class
 	private MecanumDrive drivetrain;
@@ -53,42 +54,53 @@ public class Robot extends IterativeRobot
 	//For drive train PID - face buttons
 	PIDController turnController;
 	double rotate;
-	double P = 0.02;
-	double I = 0.00;
-	double D = 0.06;
+	double Pg = 0.02;
+	double Ig = 0.00;
+	double Dg = 0.06;
 	float kToleranceDegrees = 2;
 	boolean rotateToAngle;
 	double currentRotationRate;
 
 	//For drive train - wheel rotations
 	//Front Left
+	float kToleranceRotations = 100;
 	PIDController FLController;
-	double P0 = 0.0003;
-	double I0 = 0.0;
+	double P0 = 0.0004;
+	double I0 = 0.000001;
 	double D0 = 0.0001;
 	double FLSpeed;
 	//Front Right
 	PIDController FRController;
-	double P1 = 0.0003;
-	double I1 = 0.0;
+	double P1 = 0.0004;
+	double I1 = 0.000001;
 	double D1 = 0.0001;
 	double FRSpeed;
 	//Back Left
 	PIDController BLController;
-	double P2 = 0.0003;
-	double I2 = 0.0;
+	double P2 = 0.0004;
+	double I2 = 0.000001;
 	double D2 = 0.0001;
 	double BLSpeed;
 	//Back Right
 	PIDController BRController;
-	double P3 = 0.0003;
-	double I3 = 0.0;
+	double P3 = 0.0004;
+	double I3 = 0.000001;
 	double D3 = 0.0001;
 	double BRSpeed;
+	//A tolerance value that wheel rotations must reach between
+	private double tolerance = 200;
 
 	//For elevator PID
-	PIDController elevatorController;
-	boolean rotatetoHeight;
+	PIDController EController;
+	double Pe = 0.0;
+	double Ie = 0.0;
+	double De = 0.0;
+	double ESpeed;
+	//A value assigned to top, bottom, switch and scale height
+	double TOP = 0.0;
+	double BOTTOM = 0.0;
+	double SWITCH = 0.0;
+	double SCALE = 0.0;
 
 	//Configures all the Joysticks and Buttons for both controllers
 	double leftStickX;
@@ -96,6 +108,7 @@ public class Robot extends IterativeRobot
 	double rightStickX;
 	double rightStickY;
 	double leftStickY_Operator;
+	double rightStickY_Operator;
 	boolean getButtonSTART;
 	boolean getButtonY;
 	boolean getButtonX;
@@ -104,8 +117,6 @@ public class Robot extends IterativeRobot
 	boolean getButtonRT_Operator;
 	boolean getButtonLB_Operator;
 	boolean getButtonLT_Operator;
-	double rightStickY_Operator;
-	boolean test;
 
 	//need to set variables to use PCM
 	private Compressor air = new Compressor(0);
@@ -116,9 +127,6 @@ public class Robot extends IterativeRobot
 
 	//Declaring a string to get the switch/scale positioning for each alliance
 	String gameData;
-
-	//Declaring a timer for autonomous timings
-	Timer autoTimer = new Timer();
 
 	//Declaring positions for starting autonomous
 	boolean MIDDLE = true, LEFT = false, RIGHT = false;
@@ -145,9 +153,6 @@ public class Robot extends IterativeRobot
 		//Initiate the RoboDrive class, so that drive train variable can be used with the talons - driving controller
 		drivetrain = new MecanumDrive(frontLeftDrive, backLeftDrive, frontRightDrive, backRightDrive);
 
-		//Resetting the gyro reading for the rest of run time
-		ahrs.reset();
-
 		//Configuring settings for wheel encoders
 		frontLeftDrive.configSelectedFeedbackSensor(FeedbackDevice.QuadEncoder, 0, 0);
 		frontLeftDrive.set(ControlMode.Position, 0);
@@ -157,9 +162,13 @@ public class Robot extends IterativeRobot
 		backLeftDrive.set(ControlMode.Position, 0);
 		backRightDrive.configSelectedFeedbackSensor(FeedbackDevice.QuadEncoder, 0, 0);
 		backRightDrive.set(ControlMode.Position, 0);
+		
+		//Configuring settings for elevator encoder
+		rightElevator.configSelectedFeedbackSensor(FeedbackDevice.QuadEncoder, 0, 0);
+		rightElevator.set(ControlMode.Position, 0);
 
 		//Executes PID calculations for gyro face buttons
-		turnController = new PIDController(P, I, D, ahrs, this::pidWrite);
+		turnController = new PIDController(Pg, Ig, Dg, ahrs, this::gyroPidWrite);
 		turnController.setInputRange(-180.0f,  180.0f);
 		turnController.setOutputRange(-1.0, 1.0);
 		turnController.setAbsoluteTolerance(kToleranceDegrees);
@@ -168,34 +177,41 @@ public class Robot extends IterativeRobot
 		//Executes PID calculations for wheel rotations - Front Left
 		FLController = new PIDController(P0, I0, D0, new TalonSrxPIDSource(frontLeftDrive, 0), this::frontLeftPidWrite);
 		FLController.setInputRange(-100000, 100000);
-		FLController.setOutputRange(-1.0, 1.0);
-		FLController.setAbsoluteTolerance(800);
-		
+		FLController.setOutputRange(-0.75, 0.75);
+		FLController.setAbsoluteTolerance(kToleranceRotations);
+		FLController.setContinuous(false);
+
 
 		//Executes PID calculations for wheel rotations - Front Right
-		FRController = new PIDController(P1, I1, D1, new TalonSrxPIDSource(frontRightDrive, 1), this::frontRightPidWrite);
+		FRController = new PIDController(P1, I1, D1, new TalonSrxPIDSource(frontRightDrive, 0), this::frontRightPidWrite);
 		FRController.setInputRange(-100000, 100000);
-		FRController.setOutputRange(-1.0, 1.0);
-		FRController.setAbsoluteTolerance(kToleranceDegrees);
+		FRController.setOutputRange(-0.75, 0.75);
+		FRController.setAbsoluteTolerance(kToleranceRotations);
+		FRController.setContinuous(false);
 
 		//Executes PID calculations for wheel rotations - Back Left
-		BLController = new PIDController(P2, I2, D2, new TalonSrxPIDSource(backLeftDrive, 2), this::backLeftPidWrite);
+		BLController = new PIDController(P2, I2, D2, new TalonSrxPIDSource(backLeftDrive, 0), this::backLeftPidWrite);
 		BLController.setInputRange(-100000, 100000);
-		BLController.setOutputRange(-1.0, 1.0);
-		BLController.setAbsoluteTolerance(kToleranceDegrees);
+		BLController.setOutputRange(-0.75, 0.75);
+		BLController.setAbsoluteTolerance(kToleranceRotations);
+		BLController.setContinuous(false);
 
 		//Executes PID calculations for wheel rotations - Back Right
-		BRController = new PIDController(P3, I3, D3, new TalonSrxPIDSource(backRightDrive, 3), this::backRightPidWrite);
+		BRController = new PIDController(P3, I3, D3, new TalonSrxPIDSource(backRightDrive, 0), this::backRightPidWrite);
 		BRController.setInputRange(-100000, 100000);
-		BRController.setOutputRange(-1.0, 1.0);
-		BRController.setAbsoluteTolerance(kToleranceDegrees);
-
-
+		BRController.setOutputRange(-0.75, 0.75);
+		BRController.setAbsoluteTolerance(kToleranceRotations);
+		BLController.setContinuous(false);
+		
+		//Executes PID calculations for elevator rotations
+		EController = new PIDController(Pe, Ie, De, new TalonSrxPIDSource(rightElevator, 0), this::ElevatorPidWrite);
+		EController.setInputRange(-100000, 100000);
+		EController.setOutputRange(-0.7, 1.0);
+		EController.setAbsoluteTolerance(kToleranceRotations);
+		EController.setContinuous(false);
+		
 		//WHEN LEFT SIDE WHEELS ROTATE FORWARDS OVER THE TOP, ENCODERS APPROACH -INFINITY
 		//WHEN RIGHT SIDE WHEELS ROTATE FORWARDS OVER THE TOP, ENCODERS APPROACH +INFINITY
-
-		//Executes PID calculations for elevator
-		//elevatorController = new PIDController(P, I, D, (PIDSource) leftElevator, this);
 
 		//The robot's claw is set to closed because it will be holding a cube when turned on
 		ClawClose();
@@ -213,10 +229,12 @@ public class Robot extends IterativeRobot
 	{
 		ahrs.reset();
 		gameData = DriverStation.getInstance().getGameSpecificMessage();
-		resetEncoders();
-		autoTimer.start();
-		FLController.setSetpoint(5000);
+		resetAllEncoders();
 		FLController.enable();
+		FRController.enable();
+		BLController.enable();
+		BRController.enable();
+		EController.enable();
 	}
 
 	public void autonomousPeriodic()
@@ -229,7 +247,9 @@ public class Robot extends IterativeRobot
 		}
 
 		 */	
-		frontLeftDrive.set(-FLSpeed);
+
+		driveRight(5000);
+
 		/*
 		if(MIDDLE && gameData.charAt(0) == 'L')
 		{
@@ -273,10 +293,20 @@ public class Robot extends IterativeRobot
 		showDisplay();
 	}
 
+	public void teleopInit()
+	{
+		ahrs.reset();
+		resetAllEncoders();
+		FLController.disable();
+		FRController.disable();
+		BLController.disable();
+		BRController.disable();
+	}
+
 	public void teleopPeriodic() 
 	{
 		showDisplay();
-		
+
 		leftStickX = driverPad.getValue(LogitechDualAction.LogitechControl.LEFT_STICK, LogitechDualAction.LogitechAxis.X);
 		leftStickY = driverPad.getValue(LogitechDualAction.LogitechControl.LEFT_STICK, LogitechDualAction.LogitechAxis.Y);
 		rightStickX = driverPad.getValue(LogitechDualAction.LogitechControl.RIGHT_STICK, LogitechDualAction.LogitechAxis.X);
@@ -290,7 +320,6 @@ public class Robot extends IterativeRobot
 		getButtonLT_Operator = operatorPad.getButton(LogitechDualAction.LogitechButton.LEFT_TRIGGER);
 		leftStickY_Operator = operatorPad.getValue(LogitechDualAction.LogitechControl.LEFT_STICK, LogitechDualAction.LogitechAxis.Y);
 		rightStickY_Operator = operatorPad.getValue(LogitechDualAction.LogitechControl.RIGHT_STICK, LogitechDualAction.LogitechAxis.Y );
-		test = driverPad.getButton(LogitechDualAction.LogitechButton.RIGHT_TRIGGER);
 
 		//gets yaw from gyro continuously
 		angle = ahrs.getYaw();
@@ -348,16 +377,6 @@ public class Robot extends IterativeRobot
 			turnController.disable();
 			currentRotationRate = rightStickX;
 		}
-		
-		if(test)
-		{
-			/*
-			FLController.setSetpoint(10000);
-			FLController.enable();
-			frontLeftDrive.set(-FLSpeed);
-			*/
-			frontLeftDrive.set(0.5);
-		}
 
 		//Calls upon the mecanumDrive_Cartesian method that sends specific power to the talons
 		drivetrain.driveCartesian (leftStickX, leftStickY, currentRotationRate * 0.5, -angle);
@@ -368,12 +387,16 @@ public class Robot extends IterativeRobot
 		{
 			ClawOutput();
 		}
-		else {
+		else if(getButtonLB_Operator)
+		{
+			ClawShoot();
+		}else
+		{
 			ClawStandby();
 		}
 
 		//Setting positions for the pistons
-		//Pressing Right Trigger opens the claw, claw is closed at default
+		//Pressing Right Trigger opens the claw, claw is closed when released
 		if(getButtonRT_Operator)
 		{
 			c = 0;
@@ -382,7 +405,8 @@ public class Robot extends IterativeRobot
 		}else
 		{
 			c++;
-			if(c <= 60)
+			//Runs the ClawIntake for a bit after the claw closes, to ensure we have the cube
+			if(c <= 40)
 			{
 				ClawIntake();
 			}
@@ -403,18 +427,10 @@ public class Robot extends IterativeRobot
 		}
 		else 
 		{
-			//elevatorController.setSetpoint(leftElevator.getSelectedSensorPosition(0));
-			//elevatorController.enable();
-			//leftStickY_Operator = rotateToAngleRate;
+			ElevatorHold();
 		}
 
-		//Stop taking air when pneumatics reaches 120 psi
-		if (pressureSwitch == true) 
-		{
-			air.setClosedLoopControl(false);
-		}
-
-		//Right stick on operator controller lowers claw based on input - otherwise it holds
+		//Right stick on operator controller raises/lowers claw based on input - otherwise it holds
 		if(rightStickY_Operator > 0.25)
 		{
 			ClawRotateUp();
@@ -423,35 +439,50 @@ public class Robot extends IterativeRobot
 			ClawRotateDown();
 		}else
 		{
-			ClawHold();
+			ClawStop();
+		}
+
+		//Stop taking air when pneumatics reaches 120 psi
+		if (pressureSwitch == true) 
+		{
+			air.setClosedLoopControl(false);
 		}
 	}
 
-	public void pidWrite(double output) 
+	//Receives gyro PID values
+	public void gyroPidWrite(double output) 
 	{
 		rotate = output;
-		SmartDashboard.putNumber("GYRO", rotate);
 	}
 
+	//Receives front left motor PID values 
 	public void frontLeftPidWrite(double speed0)
 	{
-		FLSpeed = speed0;
-		SmartDashboard.putNumber("KTY", speed0);
+		FLSpeed = -speed0;
 	}
 
+	//Receives front right motor PID values 
 	public void frontRightPidWrite(double speed1)
 	{
-		FRSpeed = speed1;
+		FRSpeed = -speed1;
 	}
 
+	//Receives back left motor PID values 
 	public void backLeftPidWrite(double speed2)
 	{
-		BLSpeed = speed2;
+		BLSpeed = -speed2;
 	}
 
+	//Receives back right motor PID values 
 	public void backRightPidWrite(double speed3)
 	{
-		BRSpeed = speed3;
+		BRSpeed = -speed3;
+	}
+
+	//Receives right elevator PID values
+	public void ElevatorPidWrite(double speed4)
+	{
+		ESpeed = -speed4;
 	}
 
 	//Preset method that pushes out "right stick X rotation" with PID - backward
@@ -499,11 +530,19 @@ public class Robot extends IterativeRobot
 		IntakeL.set(-0.5);
 		IntakeR.set(0.5);
 	}
+
+	//Gives the operator an option to shoot the cube farther distances
+	private void ClawShoot()
+	{
+		IntakeL.set(-1.0);
+		IntakeR.set(1.0);
+	}
+
 	//Motors pulling cube in lightly to prevent losing the cube 
 	private void ClawStandby()
 	{
-		IntakeL.set(0.1);
-		IntakeR.set(-0.1);
+		IntakeL.set(0.12);
+		IntakeR.set(-0.12);
 	}
 
 	//Close claw
@@ -520,163 +559,249 @@ public class Robot extends IterativeRobot
 	//Elevator Up
 	private void ElevatorUp()
 	{
-		leftElevator.set(-1);
+		leftElevator.set(1);
+		leftElevatorSlave.set(1);
 		rightElevator.set(1);
 	}
 	//Elevator Down
 	private void ElevatorDown()
 	{
-		leftElevator.set(0.35);
-		rightElevator.set(-0.35);
+		leftElevator.set(-0.7);
+		leftElevatorSlave.set(-0.7);
+		rightElevator.set(-0.7);
 	}
 
-	//Elevator Stop
 	private void ElevatorHold()
 	{
-		//leftElevator.set(ControlMode.Position, height);
-		rightElevator.set(0.0);
 		leftElevator.set(0.0);
+		leftElevatorSlave.set(0.0);
+		rightElevator.set(0.0);
 	}
-
 	//Claw Rotate Up
 	private void ClawRotateUp()
 	{
-		pivot.set(0.6);
+		pivot.set(-0.8);
 	}
 
 	//Claw Rotate Down
 	private void ClawRotateDown()
 	{
-		pivot.set(-0.6);
+		pivot.set(0.8);
 	}
 
 	//Claw motors are stopped
-	private void ClawHold()
+	private void ClawStop()
 	{
 		pivot.set(0.0);
 	}
 
-	//Driving forward using encoders
-	private int driveForward(double ticks, char orientation)
+	private int pidTurn(char direction)
 	{
-
-		double currentRotationRate = 0;
-		if(orientation == 'f')
+		double turnSpeed;
+		double angle;
+		//Setting a direction for the robot to face
+		switch(direction)
 		{
-			currentRotationRate = forwardPID();
-		}else if(orientation == 'l')
-		{
-			currentRotationRate = leftPID();
+		case 'f': turnSpeed = forwardPID();
+		angle = 0.0;
+		break;
+		case 'l': turnSpeed = leftPID();
+		angle = -90.0;
+		break;
+		case 'r': turnSpeed = rightPID();
+		angle = 90.0;
+		break;
+		case 'b': turnSpeed = backwardPID();
+		angle = 180.0;
+		break;
+		default: turnSpeed = 0.0;
+		angle = 0.0;
 		}
-		else if(orientation == 'r')
+
+		drivetrain.driveCartesian(0.0, 0.0, turnSpeed, 0.0);
+
+		if(ahrs.getYaw() >= angle - kToleranceDegrees && ahrs.getYaw() <= angle + kToleranceDegrees)
 		{
-			currentRotationRate = rightPID();
-		}else if(orientation == 'b')
+			return 1;
+		}else
 		{
-			currentRotationRate = backwardPID();
+			return 0;
 		}
+	}
 
-		angle = ahrs.getYaw();
+	//Getting elevator to desired height
+	private int elevatorPosition(double position)
+	{
+		EController.setSetpoint(position);
+		rightElevator.set(ESpeed);
+		leftElevator.set(ESpeed);
+		leftElevatorSlave.set(ESpeed);
+		
+		if(Math.abs(getTicks(rightElevator)) >= position - tolerance && Math.abs(getTicks(rightElevator)) <= position + tolerance)
+		{
+			return 1;
+		}else
+		{
+			return 0;
+		}
+	}
 
-		drivetrain.driveCartesian(0, 0, 0, -angle);
+	//Driving forward using encoders
+	private int driveForward(double ticks)
+	{
+		//FRONT LEFT
+		FLController.setSetpoint(-ticks);
+		frontLeftDrive.set(FLSpeed);
 
+		//FRONT RIGHT
+		FRController.setSetpoint(ticks);
+		frontRightDrive.set(FRSpeed);
+
+		//BACK LEFT
+		BLController.setSetpoint(-ticks);
+		backLeftDrive.set(BLSpeed);
+
+		//BACK RIGHT
+		BRController.setSetpoint(ticks);
+		backRightDrive.set(BRSpeed);
+
+		if(Math.abs(getTicks(frontLeftDrive)) >= ticks - tolerance && Math.abs(getTicks(frontLeftDrive)) <= ticks + tolerance)
+		{
+			if(Math.abs(getTicks(frontRightDrive)) >= ticks - tolerance && Math.abs(getTicks(frontRightDrive)) <= ticks + tolerance)
+			{
+				if(Math.abs(getTicks(backLeftDrive)) >= ticks - tolerance && Math.abs(getTicks(backLeftDrive)) <= ticks + tolerance)
+				{
+					if(Math.abs(getTicks(backRightDrive)) > ticks - tolerance && Math.abs(getTicks(backRightDrive)) <= ticks + tolerance)
+					{
+						return 1;
+					}
+				}
+			}
+		}
 		return 0;
-
 	}
 
 	//Driving left using encoders
-	private int driveLeft(double ticks, char orientation)
+	private int driveLeft(double ticks)
 	{
+		//FRONT LEFT
+		FLController.setSetpoint(ticks);
+		frontLeftDrive.set(FLSpeed);
 
-		double currentRotationRate = 0;
-		if(orientation == 'f')
+		//FRONT RIGHT
+		FRController.setSetpoint(ticks);
+		frontRightDrive.set(FRSpeed);
+
+		//BACK LEFT
+		BLController.setSetpoint(-ticks);
+		backLeftDrive.set(BLSpeed);
+
+		//BACK RIGHT
+		BRController.setSetpoint(-ticks);
+		backRightDrive.set(BRSpeed);
+
+		if(Math.abs(getTicks(frontLeftDrive)) >= ticks - tolerance && Math.abs(getTicks(frontLeftDrive)) <= ticks + tolerance)
 		{
-			currentRotationRate = forwardPID();
-		}else if(orientation == 'l')
-		{
-			currentRotationRate = leftPID();
+			if(Math.abs(getTicks(frontRightDrive)) >= ticks - tolerance && Math.abs(getTicks(frontRightDrive)) <= ticks + tolerance)
+			{
+				if(Math.abs(getTicks(backLeftDrive)) >= ticks - tolerance && Math.abs(getTicks(backLeftDrive)) <= ticks + tolerance)
+				{
+					if(Math.abs(getTicks(backRightDrive)) >= ticks - tolerance && Math.abs(getTicks(backRightDrive)) <= ticks + tolerance)
+					{
+						return 1;
+					}
+				}
+			}
 		}
-		else if(orientation == 'r')
-		{
-			currentRotationRate = rightPID();
-		}else if(orientation == 'b')
-		{
-			currentRotationRate = backwardPID();
-		}
-
-		angle = ahrs.getYaw();
-
-		drivetrain.driveCartesian(0, 0, currentRotationRate, -angle);
-
 		return 0;
 	}
 
 	//Driving right using encoders
-	private int driveRight(double ticks, char orientation)
+	private int driveRight(double ticks)
 	{
+		//FRONT LEFT
+		FLController.setSetpoint(-ticks);
+		frontLeftDrive.set(FLSpeed);
 
+		//FRONT RIGHT
+		FRController.setSetpoint(-ticks);
+		frontRightDrive.set(FRSpeed);
 
-		double currentRotationRate = 0;
-		if(orientation == 'f')
+		//BACK LEFT
+		BLController.setSetpoint(ticks);
+		backLeftDrive.set(BLSpeed);
+
+		//BACK RIGHT
+		BRController.setSetpoint(ticks);
+		backRightDrive.set(BRSpeed);
+
+		if(Math.abs(getTicks(frontLeftDrive)) >= ticks - tolerance && Math.abs(getTicks(frontLeftDrive)) <= ticks + tolerance)
 		{
-			currentRotationRate = forwardPID();
-		}else if(orientation == 'l')
-		{
-			currentRotationRate = leftPID();
+			if(Math.abs(getTicks(frontRightDrive)) >= ticks - tolerance && Math.abs(getTicks(frontRightDrive)) <= ticks + tolerance)
+			{
+				if(Math.abs(getTicks(backLeftDrive)) >= ticks - tolerance && Math.abs(getTicks(backLeftDrive)) <= ticks + tolerance)
+				{
+					if(Math.abs(getTicks(backRightDrive)) > ticks - tolerance && Math.abs(getTicks(backRightDrive)) <= ticks + tolerance)
+					{
+						return 1;
+					}
+				}
+			}
 		}
-		else if(orientation == 'r')
-		{
-			currentRotationRate = rightPID();
-		}else if(orientation == 'b')
-		{
-			currentRotationRate = backwardPID();
-		}
-
-		angle = ahrs.getYaw();
-
-		drivetrain.driveCartesian(0, 0, currentRotationRate, -angle);
-
 		return 0;
 	}
 
-	//Driving forward using encoders
-	private int driveBackward(double ticks, char orientation)
+	//Driving backward using encoders
+	private int driveBackward(double ticks)
 	{
+		//FRONT LEFT
+		FLController.setSetpoint(ticks);
+		frontLeftDrive.set(FLSpeed);
 
+		//FRONT RIGHT
+		FRController.setSetpoint(-ticks);
+		frontRightDrive.set(FRSpeed);
 
-		double currentRotationRate = 0;
-		if(orientation == 'f')
+		//BACK LEFT
+		BLController.setSetpoint(ticks);
+		backLeftDrive.set(BLSpeed);
+
+		//BACK RIGHT
+		BRController.setSetpoint(-ticks);
+		backRightDrive.set(BRSpeed);
+
+		if(Math.abs(getTicks(frontLeftDrive)) >= ticks - tolerance && Math.abs(getTicks(frontLeftDrive)) <= ticks + tolerance)
 		{
-			currentRotationRate = forwardPID();
-		}else if(orientation == 'l')
-		{
-			currentRotationRate = leftPID();
+			if(Math.abs(getTicks(frontRightDrive)) >= ticks - tolerance && Math.abs(getTicks(frontRightDrive)) <= ticks + tolerance)
+			{
+				if(Math.abs(getTicks(backLeftDrive)) >= ticks - tolerance && Math.abs(getTicks(backLeftDrive)) <= ticks + tolerance)
+				{
+					if(Math.abs(getTicks(backRightDrive)) > ticks - tolerance && Math.abs(getTicks(backRightDrive)) <= ticks + tolerance)
+					{
+						return 1;
+					}
+				}
+			}
 		}
-		else if(orientation == 'r')
-		{
-			currentRotationRate = rightPID();
-		}else if(orientation == 'b')
-		{
-
-			angle = ahrs.getYaw();	
-
-			drivetrain.driveCartesian(0, 0, currentRotationRate, -angle);}
-
 		return 0;
 	}
 
-	//Returns the average wheel rotations from all four wheels
-	private double wheelRotations()
-	{
-		return (frontLeftDrive.getSelectedSensorPosition(0) + frontRightDrive.getSelectedSensorPosition(1) + backLeftDrive.getSelectedSensorPosition(2) +  backRightDrive.getSelectedSensorPosition(3)) / 4;
-	}
-
-	private void resetEncoders()
+	private void resetAllEncoders()
 	{
 		frontLeftDrive.setSelectedSensorPosition(0, 0, 10);
 		frontRightDrive.setSelectedSensorPosition(0, 0, 10);
 		backLeftDrive.setSelectedSensorPosition(0, 0, 10);
 		backRightDrive.setSelectedSensorPosition(0, 0, 10);
+	}
+
+	private double getTicks(WPI_TalonSRX talon)
+	{
+		return talon.getSelectedSensorPosition(0);
+	}
+
+	private double getVelocity(WPI_TalonSRX talon)
+	{
+		return talon.getSelectedSensorVelocity(0);
 	}
 
 	private void showDisplay()
@@ -685,5 +810,7 @@ public class Robot extends IterativeRobot
 		SmartDashboard.putNumber("Front Right Encoder:", frontRightDrive.getSelectedSensorPosition(0));
 		SmartDashboard.putNumber("Back Left Encoder:", backLeftDrive.getSelectedSensorPosition(0));
 		SmartDashboard.putNumber("Back Right Encoder:", backRightDrive.getSelectedSensorPosition(0));
+		SmartDashboard.putNumber("Gyro:", ahrs.getYaw());
+		SmartDashboard.putBoolean("Claw Open:", getButtonRT_Operator);
 	}
 }

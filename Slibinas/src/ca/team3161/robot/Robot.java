@@ -1,5 +1,7 @@
 package ca.team3161.robot;
 
+import java.util.EnumSet;
+
 import com.ctre.phoenix.motorcontrol.ControlMode;
 import com.ctre.phoenix.motorcontrol.FeedbackDevice;
 import com.ctre.phoenix.motorcontrol.can.WPI_TalonSRX;
@@ -16,8 +18,8 @@ import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.I2C;
 import edu.wpi.first.wpilibj.IterativeRobot;
 import edu.wpi.first.wpilibj.PIDController;
+import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.VictorSP;
-import edu.wpi.first.wpilibj.command.Command;
 import edu.wpi.first.wpilibj.drive.MecanumDrive;
 import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
@@ -58,45 +60,50 @@ public class Robot extends IterativeRobot
 	double currentRotationRate;
 
 	//For drive train - wheel rotations
-	//Front Left
 	float kToleranceRotations = 100;
+
+	//global PID pos values
+	double PX = 0.0006;
+	double IX = 0.000001;
+	double DX = 0.0022;
+	
+	//Front Left Wheel
 	PIDController FLController;
-	double P0 = 0.0004;
-	double I0 = 0.000001;
-	double D0 = 0.0001;
+	double P0 = PX;
+	double I0 = IX;
+	double D0 = DX;
 	double FLSpeed;
-	//Front Right
+	//Front Right Wheel
 	PIDController FRController;
-	double P1 = 0.0004;
-	double I1 = 0.000001;
-	double D1 = 0.0001;
+	double P1 = PX;
+	double I1 = IX;
+	double D1 = DX;
 	double FRSpeed;
-	//Back Left
+	//Back Left Wheel
 	PIDController BLController;
-	double P2 = 0.0004;
-	double I2 = 0.000001;
-	double D2 = 0.0001;
+	double P2 = PX;
+	double I2 = IX;
+	double D2 = DX;
 	double BLSpeed;
-	//Back Right
+	//Back Right Wheel
 	PIDController BRController;
-	double P3 = 0.0004;
-	double I3 = 0.000001;
-	double D3 = 0.0001;
+	double P3 = PX;
+	double I3 = IX;
+	double D3 = DX;
 	double BRSpeed;
 	//A tolerance value that wheel rotations must reach between
-	private double tolerance = 200;
+	private double tolerance = 350;
 
 	//For elevator PID
 	PIDController EController;
-	double Pe = 0.0;
+	double Pe = 0.000001;
 	double Ie = 0.0;
-	double De = 0.0;
+	double De = 0.00001;
 	double ESpeed;
 	//A value assigned to top, bottom, switch and scale height
-	double TOP = 0.0;
-	double BOTTOM = 0.0;
+	double TOP = -51000;
+	double BOTTOM = -5000;
 	double SWITCH = 0.0;
-	double SCALE = 0.0;
 
 	//Configures all the Joysticks and Buttons for both controllers
 	double leftStickX;
@@ -125,16 +132,42 @@ public class Robot extends IterativeRobot
 	String gameData;
 
 	//Declaring positions for starting autonomous
-	boolean MIDDLE = true, LEFT = false, RIGHT = false;
-	double ticks = 0;
+	private double ticks = 0;
+	
+	//Declaring variables to be used in automous
+	private double avgSpeed;
 
 	//A counter for running the claw's intake after the claw closes
 	private int c = 0;
 
-	private int operation = 0;
+	//A counter that controls operations in autonomous
+	private int operation;
+
+	//objects to help select specific auto paths from the smartdashboard
+	private SendableChooser<AutoMode> autoModeChooser;
+	private AutoMode selectedAutoMode;
+
+	private enum AutoMode		//Enables a variable to have a set of constant values denoted in upper case
+	{
+		SWITCH, L_SCALE, R_SCALE, L_SCALE_SWITCH, R_SCALE_SWITCH, L_SCALE_SCALE, R_SCALE_SCALE;
+	}
 
 	public void robotInit() 
 	{
+		//Instances of objects to help select specific autos from the smart dashboard
+		autoModeChooser = new SendableChooser<>();
+		//EnumSet.complementOf(EnumSet.of(AutoMode.SWITCH)).forEach(mode -> autoModeChooser.addObject(mode.toString(), mode));
+		//Default Auto Mode  is scoring switch when starting from middle
+		autoModeChooser.addDefault("Default (SWITCH):", AutoMode.SWITCH);
+		autoModeChooser.addObject("Starting Left (SCALE):", AutoMode.L_SCALE);
+		autoModeChooser.addObject("Starting Right (SCALE)", AutoMode.R_SCALE);
+		autoModeChooser.addObject("Starting Left (SCALE & SWITCH)", AutoMode.L_SCALE_SWITCH);
+		autoModeChooser.addObject("Starting Right (SCALE & SWITCH)", AutoMode.R_SCALE_SWITCH);
+		autoModeChooser.addObject("Starting Left (SCALE & SCALE)", AutoMode.L_SCALE_SCALE);
+		autoModeChooser.addObject("Starting Right (SCALE & SCALE)", AutoMode.R_SCALE_SCALE);
+
+		SmartDashboard.putData("AutoModeChooser", autoModeChooser);
+
 		frontLeftDrive.setInverted(false);
 		frontRightDrive.setInverted(false);
 		backRightDrive.setInverted(false);
@@ -143,7 +176,7 @@ public class Robot extends IterativeRobot
 		//gyro readings for kmxp
 		//ahrs = new AHRS(SPI.Port.kMXP);
 
-		//Reads in gyro readings from I2C connections
+		//Reads in gyro from I2C connections
 		ahrs = new AHRS (I2C.Port.kOnboard);
 
 		//Initiate the RoboDrive class, so that drive train variable can be used with the talons - driving controller
@@ -158,7 +191,7 @@ public class Robot extends IterativeRobot
 		backLeftDrive.set(ControlMode.Position, 0);
 		backRightDrive.configSelectedFeedbackSensor(FeedbackDevice.QuadEncoder, 0, 0);
 		backRightDrive.set(ControlMode.Position, 0);
-		
+
 		//Configuring settings for elevator encoder
 		rightElevator.configSelectedFeedbackSensor(FeedbackDevice.QuadEncoder, 0, 0);
 		rightElevator.set(ControlMode.Position, 0);
@@ -176,7 +209,6 @@ public class Robot extends IterativeRobot
 		FLController.setOutputRange(-0.75, 0.75);
 		FLController.setAbsoluteTolerance(kToleranceRotations);
 		FLController.setContinuous(false);
-
 
 		//Executes PID calculations for wheel rotations - Front Right
 		FRController = new PIDController(P1, I1, D1, new TalonSrxPIDSource(frontRightDrive, 0), this::frontRightPidWrite);
@@ -198,14 +230,14 @@ public class Robot extends IterativeRobot
 		BRController.setOutputRange(-0.75, 0.75);
 		BRController.setAbsoluteTolerance(kToleranceRotations);
 		BLController.setContinuous(false);
-		
+
 		//Executes PID calculations for elevator rotations
 		EController = new PIDController(Pe, Ie, De, new TalonSrxPIDSource(rightElevator, 0), this::ElevatorPidWrite);
 		EController.setInputRange(-100000, 100000);
-		EController.setOutputRange(-0.7, 1.0);
-		EController.setAbsoluteTolerance(kToleranceRotations);
+		EController.setOutputRange(-1.0, 1.0);
+		EController.setAbsoluteTolerance(600.0);
 		EController.setContinuous(false);
-		
+
 		//WHEN LEFT SIDE WHEELS ROTATE FORWARDS OVER THE TOP, ENCODERS APPROACH -INFINITY
 		//WHEN RIGHT SIDE WHEELS ROTATE FORWARDS OVER THE TOP, ENCODERS APPROACH +INFINITY
 
@@ -217,20 +249,24 @@ public class Robot extends IterativeRobot
 		driverPad.setMode(LogitechControl.LEFT_STICK, LogitechAxis.Y, new InvertedJoystickMode().andThen(new SquaredJoystickMode()));
 		driverPad.setMode(LogitechControl.RIGHT_STICK, LogitechAxis.X, new SquaredJoystickMode());
 
-		//Configuring settings for the elevator encoders
-
 	}
 
 	public void autonomousInit() 
 	{
 		ahrs.reset();
+		//Get scale/switch positions from driver station
 		gameData = DriverStation.getInstance().getGameSpecificMessage();
-		resetAllEncoders();
+		resetWheelEncoders();
+		//Enables all encoders that're being used in autonomous
 		FLController.enable();
 		FRController.enable();
 		BLController.enable();
 		BRController.enable();
 		EController.enable();
+		//Sets the operation to (0) to run through autonomous commands
+		operation = 0;
+		//Gets the selected autonomous from smart dashboard
+		selectedAutoMode = autoModeChooser.getSelected();
 	}
 
 	public void autonomousPeriodic()
@@ -241,44 +277,121 @@ public class Robot extends IterativeRobot
 		{
 			air.setClosedLoopControl(true);
 		}
-
 		 */	
 
-		driveRight(5000);
+		//SWITCH, L_SCALE, R_SCALE, L_SCALESWITCH, R_SCALESWITCH, L_SCALESCALE, R_SCALESCALE
+		switch (selectedAutoMode) {
+		case SWITCH:
+			SmartDashboard.putString("AUTO", "Centre - Scoring Switch!");
+			if(gameData.charAt(0) == 'L')
+			{
+				//MIDDLE - LEFT SWITCH
+				if(operation == 0)
+				{
+					operation += driveForward(1000, true);
+				}
+				if(operation == 1)
+				{
+					operation += driveLeft(1400, true);
+				}
+				if(operation == 2)
+				{
+					operation += driveForward(2200, true);
+				}
+				if(operation == 3)
+				{
+					operation += pidTurnExact(0.0);
+				}
+				if(operation == 4)
+				{
+					Timer.delay(0.3);
+					ClawOutput();
+					Timer.delay(0.5);
+					ClawStandby();
+					operation++;
+				}
+			}else
+			{
+				//MIDDLE - RIGHT SWITCH
+				if(operation == 0)
+				{
+					operation += driveForward(1000, true);
+				}
+				if(operation == 1)
+				{
+					operation += driveRight(1200, true);
+				}
+				if(operation == 2)
+				{
+					operation += driveForward(2200, true);
+				}
+				if(operation == 3)
+				{
+					operation += pidTurnExact(0.0);
+				}
+				if(operation == 4)
+				{
+					pidTurnExact(0.0);
+					Timer.delay(0.3);
+					ClawOutput();
+					Timer.delay(0.5);
+					ClawStandby();
+					operation++;
+				}
+			}
+			break;
+		case L_SCALE:
+			SmartDashboard.putString("AUTO", "Left - Scoring Scale!");
+			break;
+		case R_SCALE:
+			SmartDashboard.putString("AUTO", "Right - Scoring Scale!");
+			break;
+		case L_SCALE_SWITCH:
+			SmartDashboard.putString("AUTO", "Left - Scoring Scale... Then Switch!");
+			break;
+		case R_SCALE_SWITCH:
+			SmartDashboard.putString("AUTO", "Right - Scoring Scale... Then Switch!");
+			break;
+		case L_SCALE_SCALE:
+			SmartDashboard.putString("AUTO", "Left - Scoring Scale... Twice!");
+			break;
+		case R_SCALE_SCALE:
+			SmartDashboard.putString("AUTO", "Right  - Scoring Scale... Twice!");
+			break;
+		}
 
+		//STARTING LEFT - LEFT SCALE
 		/*
-		if(MIDDLE && gameData.charAt(0) == 'L')
+		if(operation == 0)
 		{
-			if(operation == 0)
-			{
-				driveForward(375, 0.3, 'f');
-			}
-			if(operation == 1)
-			{
-				operation += driveLeft(200, 0.3, 'f');
-			}
-			if(operation == 2)
-			{
-				operation += driveForward(175, 0.3, 'f');
-			}
-			if(operation == 3)
-			{
-				//ClawOutput();
-				operation++;
-			}
-			if(operation == 4)
-			{
-				operation += driveLeft(150, 0.3, 'f');
-			}
-			if(operation == 5)
-			{
-				operation += driveForward(100, 0.3, 'f');
-			}
-
-			//Raise elevator to proper height using VP encoders
+			operation += driveForward(7000);
+		}
+		if(operation == 1)
+		{
+			operation += pidTurnExact(60.0);
+		}
+		if(operation == 2)
+		{
+			operation += elevatorPosition(30000);
+		}
+		if(operation == 3)
+		{
+			elevatorPositionHold();
+			ClawShoot();
+			Timer.delay(0.5);
+			ClawStandby();
+			operation++;
+		}
+		if(operation == 4)
+		{
+			operation += elevatorPosition(5000);
+		}
+		if(operation == 5)
+		{
+			elevatorPositionHold();
+			pidTurnExact(160);
 		}
 		 */
-
 
 		//stop taking air when pneumatics reaches 120 psi
 		/*if (pressureSwitch) 
@@ -292,11 +405,12 @@ public class Robot extends IterativeRobot
 	public void teleopInit()
 	{
 		ahrs.reset();
-		resetAllEncoders();
+		resetWheelEncoders();
 		FLController.disable();
 		FRController.disable();
 		BLController.disable();
 		BRController.disable();
+		rightElevator.setSelectedSensorPosition(0, 0, 10);
 	}
 
 	public void teleopPeriodic() 
@@ -322,6 +436,7 @@ public class Robot extends IterativeRobot
 
 		//get air for pneumatics
 		pressureSwitch = air.getPressureSwitchValue();
+
 		if (!pressureSwitch) 
 		{
 			air.setClosedLoopControl(true);
@@ -375,7 +490,7 @@ public class Robot extends IterativeRobot
 		}
 
 		//Calls upon the mecanumDrive_Cartesian method that sends specific power to the talons
-		drivetrain.driveCartesian (leftStickX, leftStickY, currentRotationRate * 0.5, -angle);
+		drivetrain.driveCartesian (leftStickX, leftStickY, currentRotationRate * 0.75, -angle);
 
 		//Setting speeds for the claw's motors to intake or shoot out the cube
 		//Left Bumper intakes, Left Trigger spits out cube
@@ -544,13 +659,13 @@ public class Robot extends IterativeRobot
 	//Close claw
 	private void ClawClose()
 	{
-		claw.set(DoubleSolenoid.Value.kReverse);	
+		claw.set(DoubleSolenoid.Value.kForward);	
 	} 
 
 	//Open claw
 	private void ClawOpen()
 	{
-		claw.set(DoubleSolenoid.Value.kForward);
+		claw.set(DoubleSolenoid.Value.kReverse);
 	}
 	//Elevator Up
 	private void ElevatorUp()
@@ -591,36 +706,19 @@ public class Robot extends IterativeRobot
 		pivot.set(0.0);
 	}
 
-	private int pidTurn(char direction)
+	private int pidTurnExact(double angle)
 	{
-		double turnSpeed;
-		double angle;
-		//Setting a direction for the robot to face
-		switch(direction)
-		{
-		case 'f': turnSpeed = forwardPID();
-		angle = 0.0;
-		break;
-		case 'l': turnSpeed = leftPID();
-		angle = -90.0;
-		break;
-		case 'r': turnSpeed = rightPID();
-		angle = 90.0;
-		break;
-		case 'b': turnSpeed = backwardPID();
-		angle = 180.0;
-		break;
-		default: turnSpeed = 0.0;
-		angle = 0.0;
-		}
-
-		drivetrain.driveCartesian(0.0, 0.0, turnSpeed, 0.0);
+		double currentAngle = ahrs.getYaw();
+		turnController.setSetpoint(angle);
+		turnController.enable();
 
 		if(ahrs.getYaw() >= angle - kToleranceDegrees && ahrs.getYaw() <= angle + kToleranceDegrees)
 		{
+			turnController.disable();
 			return 1;
 		}else
 		{
+			drivetrain.driveCartesian(0.0, 0.0, rotate * 0.75, currentAngle);
 			return 0;
 		}
 	}
@@ -628,11 +726,11 @@ public class Robot extends IterativeRobot
 	//Getting elevator to desired height
 	private int elevatorPosition(double position)
 	{
-		EController.setSetpoint(position);
+		EController.setSetpoint(-position);
 		rightElevator.set(ESpeed);
 		leftElevator.set(ESpeed);
 		leftElevatorSlave.set(ESpeed);
-		
+
 		if(Math.abs(getTicks(rightElevator)) >= position - tolerance && Math.abs(getTicks(rightElevator)) <= position + tolerance)
 		{
 			return 1;
@@ -641,154 +739,176 @@ public class Robot extends IterativeRobot
 			return 0;
 		}
 	}
+	
+	private void elevatorPositionHold()
+	{
+		rightElevator.set(ESpeed);
+		leftElevator.set(ESpeed);
+		leftElevatorSlave.set(ESpeed);
+	}
 
 	//Driving forward using encoders
-	private int driveForward(double ticks)
+	private int driveForward(double ticks, boolean setFieldCentric)
 	{
 		//FRONT LEFT
 		FLController.setSetpoint(-ticks);
-		frontLeftDrive.set(FLSpeed);
 
 		//FRONT RIGHT
 		FRController.setSetpoint(ticks);
-		frontRightDrive.set(FRSpeed);
 
 		//BACK LEFT
 		BLController.setSetpoint(-ticks);
-		backLeftDrive.set(BLSpeed);
 
 		//BACK RIGHT
 		BRController.setSetpoint(ticks);
-		backRightDrive.set(BRSpeed);
-
-		if(Math.abs(getTicks(frontLeftDrive)) >= ticks - tolerance && Math.abs(getTicks(frontLeftDrive)) <= ticks + tolerance)
+		
+		avgSpeed = (FLSpeed + BLSpeed - FRSpeed - BRSpeed / 4);
+		
+		if(setFieldCentric)
 		{
-			if(Math.abs(getTicks(frontRightDrive)) >= ticks - tolerance && Math.abs(getTicks(frontRightDrive)) <= ticks + tolerance)
-			{
-				if(Math.abs(getTicks(backLeftDrive)) >= ticks - tolerance && Math.abs(getTicks(backLeftDrive)) <= ticks + tolerance)
-				{
-					if(Math.abs(getTicks(backRightDrive)) > ticks - tolerance && Math.abs(getTicks(backRightDrive)) <= ticks + tolerance)
-					{
-						return 1;
-					}
-				}
-			}
+			angle = ahrs.getYaw();
+		}else
+		{
+			//To drive straight without using field-centric
+			angle = 0.0;
 		}
-		return 0;
+		if(Math.abs(getTicks(backLeftDrive)) >= ticks - tolerance && Math.abs(getTicks(backLeftDrive)) <= ticks + tolerance)
+		{
+			resetWheelEncoders();
+			Timer.delay(0.3);
+			return 1;
+		}else
+		{
+			drivetrain.driveCartesian(-0.1, avgSpeed, forwardPID(), -angle);
+			return 0;
+		}
 	}
 
 	//Driving left using encoders
-	private int driveLeft(double ticks)
+	private int driveRight(double ticks, boolean setFieldCentric)
 	{
 		//FRONT LEFT
 		FLController.setSetpoint(ticks);
-		frontLeftDrive.set(FLSpeed);
 
 		//FRONT RIGHT
 		FRController.setSetpoint(ticks);
-		frontRightDrive.set(FRSpeed);
 
 		//BACK LEFT
 		BLController.setSetpoint(-ticks);
-		backLeftDrive.set(BLSpeed);
 
 		//BACK RIGHT
 		BRController.setSetpoint(-ticks);
-		backRightDrive.set(BRSpeed);
 
-		if(Math.abs(getTicks(frontLeftDrive)) >= ticks - tolerance && Math.abs(getTicks(frontLeftDrive)) <= ticks + tolerance)
+		avgSpeed = (FLSpeed + BLSpeed - FRSpeed - BRSpeed / 4);
+		
+		if(setFieldCentric)
 		{
-			if(Math.abs(getTicks(frontRightDrive)) >= ticks - tolerance && Math.abs(getTicks(frontRightDrive)) <= ticks + tolerance)
-			{
-				if(Math.abs(getTicks(backLeftDrive)) >= ticks - tolerance && Math.abs(getTicks(backLeftDrive)) <= ticks + tolerance)
-				{
-					if(Math.abs(getTicks(backRightDrive)) >= ticks - tolerance && Math.abs(getTicks(backRightDrive)) <= ticks + tolerance)
-					{
-						return 1;
-					}
-				}
-			}
+			angle = ahrs.getYaw();
+		}else
+		{
+			//To drive straight without using field-centric
+			angle = 0.0;
 		}
-		return 0;
+		
+		if(Math.abs(getTicks(backLeftDrive)) >= ticks - tolerance && Math.abs(getTicks(backLeftDrive)) <= ticks + tolerance)
+		{
+			resetWheelEncoders();
+			Timer.delay(0.3);
+			return 1;
+		}else
+		{
+			drivetrain.driveCartesian(avgSpeed, 0.0, forwardPID(), -angle);
+			return 0;
+		}
 	}
 
 	//Driving right using encoders
-	private int driveRight(double ticks)
+	private int driveLeft(double ticks, boolean setFieldCentric)
 	{
 		//FRONT LEFT
 		FLController.setSetpoint(-ticks);
-		frontLeftDrive.set(FLSpeed);
 
 		//FRONT RIGHT
 		FRController.setSetpoint(-ticks);
-		frontRightDrive.set(FRSpeed);
 
 		//BACK LEFT
 		BLController.setSetpoint(ticks);
-		backLeftDrive.set(BLSpeed);
 
 		//BACK RIGHT
 		BRController.setSetpoint(ticks);
-		backRightDrive.set(BRSpeed);
 
-		if(Math.abs(getTicks(frontLeftDrive)) >= ticks - tolerance && Math.abs(getTicks(frontLeftDrive)) <= ticks + tolerance)
+		avgSpeed = (FLSpeed + BLSpeed - FRSpeed - BRSpeed / 4);
+		
+		if(setFieldCentric)
 		{
-			if(Math.abs(getTicks(frontRightDrive)) >= ticks - tolerance && Math.abs(getTicks(frontRightDrive)) <= ticks + tolerance)
-			{
-				if(Math.abs(getTicks(backLeftDrive)) >= ticks - tolerance && Math.abs(getTicks(backLeftDrive)) <= ticks + tolerance)
-				{
-					if(Math.abs(getTicks(backRightDrive)) > ticks - tolerance && Math.abs(getTicks(backRightDrive)) <= ticks + tolerance)
-					{
-						return 1;
-					}
-				}
-			}
+			angle = ahrs.getYaw();
+		}else
+		{
+			//To drive straight without using field-centric
+			angle = 0.0;
 		}
-		return 0;
+		
+		if(Math.abs(getTicks(backRightDrive)) >= ticks - tolerance && Math.abs(getTicks(backRightDrive)) <= ticks + tolerance)
+		{
+			resetWheelEncoders();
+			Timer.delay(0.3);
+			return 1;
+		}else
+		{
+			drivetrain.driveCartesian(avgSpeed, 0.0, forwardPID(), -angle);
+			return 0;
+		}
 	}
 
 	//Driving backward using encoders
-	private int driveBackward(double ticks)
+	private int driveBackward(double ticks, boolean setFieldCentric)
 	{
 		//FRONT LEFT
 		FLController.setSetpoint(ticks);
-		frontLeftDrive.set(FLSpeed);
 
 		//FRONT RIGHT
 		FRController.setSetpoint(-ticks);
-		frontRightDrive.set(FRSpeed);
 
 		//BACK LEFT
 		BLController.setSetpoint(ticks);
-		backLeftDrive.set(BLSpeed);
 
 		//BACK RIGHT
 		BRController.setSetpoint(-ticks);
-		backRightDrive.set(BRSpeed);
 
-		if(Math.abs(getTicks(frontLeftDrive)) >= ticks - tolerance && Math.abs(getTicks(frontLeftDrive)) <= ticks + tolerance)
+		avgSpeed = (FLSpeed + BLSpeed - FRSpeed - BRSpeed / 4);
+		
+		if(setFieldCentric)
 		{
-			if(Math.abs(getTicks(frontRightDrive)) >= ticks - tolerance && Math.abs(getTicks(frontRightDrive)) <= ticks + tolerance)
-			{
-				if(Math.abs(getTicks(backLeftDrive)) >= ticks - tolerance && Math.abs(getTicks(backLeftDrive)) <= ticks + tolerance)
-				{
-					if(Math.abs(getTicks(backRightDrive)) > ticks - tolerance && Math.abs(getTicks(backRightDrive)) <= ticks + tolerance)
-					{
-						return 1;
-					}
-				}
-			}
+			angle = ahrs.getYaw();
+		}else
+		{
+			//To drive straight without using field-centric
+			angle = 0.0;
 		}
-		return 0;
+		
+		if(Math.abs(getTicks(backRightDrive)) >= ticks - tolerance && Math.abs(getTicks(backRightDrive)) <= ticks + tolerance)
+		{
+			resetWheelEncoders();
+			Timer.delay(0.3);
+			return 1;
+		}else
+		{
+			drivetrain.driveCartesian(0.0, avgSpeed, forwardPID(), -angle);
+			return 0;
+		}
 	}
 
 	//Resets all encoders
-	private void resetAllEncoders()
+	private void resetWheelEncoders()
 	{
 		frontLeftDrive.setSelectedSensorPosition(0, 0, 10);
 		frontRightDrive.setSelectedSensorPosition(0, 0, 10);
 		backLeftDrive.setSelectedSensorPosition(0, 0, 10);
 		backRightDrive.setSelectedSensorPosition(0, 0, 10);
+	}
+
+	private void resetElevatorEncoder()
+	{
 		rightElevator.setSelectedSensorPosition(0, 0, 10);
 	}
 
@@ -813,5 +933,7 @@ public class Robot extends IterativeRobot
 		SmartDashboard.putNumber("Back Right Encoder:", backRightDrive.getSelectedSensorPosition(0));
 		SmartDashboard.putNumber("Gyro:", ahrs.getYaw());
 		SmartDashboard.putBoolean("Claw Open:", getButtonRT_Operator);
+		SmartDashboard.putNumber("Elevator Height", rightElevator.getSelectedSensorPosition(0));
+		SmartDashboard.putNumber("OPERATION", operation);
 	}
 }

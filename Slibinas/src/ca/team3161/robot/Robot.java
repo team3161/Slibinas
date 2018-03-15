@@ -37,6 +37,8 @@ public class Robot extends IterativeRobot
 	private WPI_TalonSRX leftElevator = new WPI_TalonSRX (4);
 	private VictorSP leftElevatorSlave = new VictorSP(0);
 	private WPI_TalonSRX rightElevator = new WPI_TalonSRX (6);
+	
+	double driveFailSafe;
 
 	//Declaring the way the robot will drive - RoboDrive class
 	private MecanumDrive drivetrain;
@@ -66,7 +68,7 @@ public class Robot extends IterativeRobot
 	double PX = 0.0006;
 	double IX = 0.000001;
 	double DX = 0.0022;
-	
+
 	//Front Left Wheel
 	PIDController FLController;
 	double P0 = PX;
@@ -104,6 +106,7 @@ public class Robot extends IterativeRobot
 	double TOP = -51000;
 	double BOTTOM = -5000;
 	double SWITCH = 0.0;
+	boolean rotateToHeight;
 
 	//Configures all the Joysticks and Buttons for both controllers
 	double leftStickX;
@@ -120,6 +123,12 @@ public class Robot extends IterativeRobot
 	boolean getButtonRT_Operator;
 	boolean getButtonLB_Operator;
 	boolean getButtonLT_Operator;
+	boolean getButtonY_Operator;
+	boolean getButtonX_Operator;
+	boolean getButtonA_Operator;
+	boolean getButtonB_Operator;
+
+
 
 	//need to set variables to use PCM
 	private Compressor air = new Compressor(0);
@@ -133,7 +142,7 @@ public class Robot extends IterativeRobot
 
 	//Declaring positions for starting autonomous
 	private double ticks = 0;
-	
+
 	//Declaring variables to be used in automous
 	private double avgSpeed;
 
@@ -266,20 +275,20 @@ public class Robot extends IterativeRobot
 		//Sets the operation to (0) to run through autonomous commands
 		operation = 0;
 		//Gets the selected autonomous from smart dashboard
-		selectedAutoMode = AutoMode.SWITCH;
+		selectedAutoMode = AutoMode.L_SCALE_SWITCH;
 	}
 
 	public void autonomousPeriodic()
 	{
 		//get air for pneumatics
 		pressureSwitch = air.getPressureSwitchValue();
-		
+
 		if (!pressureSwitch) 
 		{
 			air.setClosedLoopControl(true);
 		}
 
-		/*
+
 		switch (selectedAutoMode) {
 		case SWITCH:
 			SmartDashboard.putString("AUTO", "Centre - Scoring Switch!");
@@ -352,21 +361,205 @@ public class Robot extends IterativeRobot
 			SmartDashboard.putString("AUTO", "Right - Scoring Scale!");
 			if(gameData.charAt(1) == 'L')
 			{
+
 			}
-			else {
+			else 
+			{
+
 			}
 			break;
 		case L_SCALE_SWITCH:
 			SmartDashboard.putString("AUTO", "Left - Scoring Scale... Then Switch!");
-			if(gameData.charAt(1) == 'L')
+			if(gameData.charAt(0) == 'L')
 			{
-				if(gameData.charAt(0) == 'L') {
+				if(gameData.charAt(1) == 'L') 
+				{
+					//STARTING LEFT - LEFT SCALE - LEFT SWITCH
+					if(operation == 0)
+					{
+						operation += driveForwardBL(7000, true);
+					}
+					if(operation == 1)
+					{
+						operation += pidTurnExact(60.0);
+					}
+					if(operation == 2)
+					{
+						operation += elevatorPosition(35000);
+					}
+					if(operation == 3)
+					{
+						elevatorPositionHold();
+						ClawRotateUp();
+						Timer.delay(0.075);
+						ClawStop();
+						Timer.delay(0.1);
+						ClawOutput();
+						Timer.delay(0.5);
+						ClawStandby();
+						EController.disable();
+						ElevatorHold();
+						resetWheelEncoders();
+						Timer.delay(0.3);
+						operation++;
+					}
+					if(operation == 4)
+					{
+						EController.enable();
+						operation += elevatorPosition(1000);
+
+					}
+					if(operation == 5)
+					{
+						elevatorPositionHold();
+						operation += pidTurnExact(150);
+					}
+					if(operation == 6)
+					{
+						ClawRotateUp();
+						Timer.delay(0.5);
+						ClawStop();
+						ClawOpen();
+						ClawIntake();
+						ahrs.reset();
+						operation++;
+					}
+					if(operation == 7)
+					{
+						operation += driveForwardBL(2400, false);
+					}
+					if(operation == 8)
+					{
+						ClawClose();
+						Timer.delay(1.0);
+						ClawStandby();
+						resetWheelEncoders();
+						Timer.delay(0.3);
+						operation++;
+					}
+					if(operation == 9)
+					{
+						EController.enable();
+						operation += elevatorPosition(30000);
+					}
+					if(operation == 10)
+					{
+						ElevatorHold();
+						EController.disable();
+						operation += driveForwardBL(1000, false);
+					}
+					if(operation == 11)
+					{
+						ClawOpen();
+					}
+
 				}
-				else{
-				}
-			}
+			}	
 			else {
-				if(gameData.charAt(0) == 'L') {
+				if(gameData.charAt(0) == 'R') 
+				{
+					if(gameData.charAt(1) == 'R');
+					{
+						//STARTING LEFT _ RIGHT SCALE _ RIGHT SWITCH
+						if(operation == 0)
+						{
+							operation += driveForwardBL(5700, true);
+						}
+						if(operation == 1)
+						{
+							operation += driveRight(7800);
+						}
+						if(operation == 2)
+						{
+							resetWheelEncoders();
+							Timer.delay(0.3);
+							operation++;
+						}
+						if(operation == 3)
+						{
+							operation += driveForwardBL(1000, false);
+						}
+						if(operation == 4)
+						{
+							operation += pidTurnExact(-60.0);
+						}
+						if(operation == 5)
+						{
+							operation += elevatorPosition(35000);
+						}
+						if(operation == 6)
+						{
+							elevatorPositionHold();
+							ClawRotateUp();
+							Timer.delay(0.075);
+							ClawStop();
+							Timer.delay(0.1);
+							ClawShoot();
+							Timer.delay(0.5);
+							ClawStandby();
+							EController.disable();
+							ElevatorHold();
+							resetWheelEncoders();
+							Timer.delay(0.3);
+							operation++;
+						}
+						if(operation == 7)
+						{
+							EController.enable();
+							operation += elevatorPosition(1000);
+
+						}
+						if(operation == 8)
+						{
+							elevatorPositionHold();
+							operation += pidTurnExact(-150);
+						}
+						if(operation == 9)
+						{
+							ClawRotateUp();
+							Timer.delay(0.5);
+							ClawStop();
+							ClawOpen();
+							ClawIntake();
+							resetWheelEncoders();
+							Timer.delay(0.3);
+							ahrs.reset();
+							operation++;
+						}
+						if(operation == 10)
+						{
+							operation += driveForwardBL(2100, true);
+						}
+						if(operation == 11)
+						{
+							ClawClose();
+							Timer.delay(1.0);
+							ClawStandby();
+							resetWheelEncoders();
+							Timer.delay(0.3);
+							operation++;
+						}
+						if(operation == 12)
+						{
+							EController.enable();
+							operation += elevatorPosition(30000);
+						}
+						if(operation == 13)
+						{
+							ElevatorHold();
+							EController.disable();
+							operation += driveForwardBL(1000, true);
+						}
+						if(operation == 14)
+						{
+							ClawOpen();
+						}
+
+						else
+						{
+							
+						}
+					}
 				}
 				else{
 				}
@@ -374,17 +567,194 @@ public class Robot extends IterativeRobot
 			break;
 		case R_SCALE_SWITCH:
 			SmartDashboard.putString("AUTO", "Right - Scoring Scale... Then Switch!");
-			if(gameData.charAt(1) == 'L')
+			if(gameData.charAt(0) == 'R')
 			{
-				if(gameData.charAt(0) == 'L') {
-				}
-				else{
+				if(gameData.charAt(1) == 'R')
+				{
+					//STARTING RIGHT - RIGHT SCALE - RIGHT SWITCH
+					if(operation == 0)
+					{
+						operation += driveForwardBL(6800, false);
+					}
+					if(operation == 1)
+					{
+						operation += pidTurnExact(-60.0);
+					}
+					if(operation == 2)
+					{
+						operation += elevatorPosition(35000);
+					}
+					if(operation == 3)
+					{
+						elevatorPositionHold();
+						ClawRotateUp();
+						Timer.delay(0.075);
+						ClawStop();
+						Timer.delay(0.1);
+						ClawOutput();
+						Timer.delay(0.5);
+						ClawStandby();
+						EController.disable();
+						ElevatorHold();
+						resetWheelEncoders();
+						Timer.delay(0.3);
+						operation++;
+					}
+					if(operation == 4)
+					{
+						EController.enable();
+						operation += elevatorPosition(1000);
+
+					}
+					if(operation == 5)
+					{
+						elevatorPositionHold();
+						operation += pidTurnExact(-150);
+					}
+					if(operation == 6)
+					{
+						ClawRotateUp();
+						Timer.delay(0.5);
+						ClawStop();
+						ClawOpen();
+						ClawIntake();
+						ahrs.reset();
+						operation++;
+					}
+					if(operation == 7)
+					{
+						operation += driveForwardBL(2100, true);
+					}
+					if(operation == 8)
+					{
+						ClawClose();
+						Timer.delay(1.0);
+						ClawStandby();
+						resetWheelEncoders();
+						Timer.delay(0.3);
+						operation++;
+					}
+					if(operation == 9)
+					{
+						EController.enable();
+						operation += elevatorPosition(30000);
+					}
+					if(operation == 10)
+					{
+						ElevatorHold();
+						EController.disable();
+						operation += driveForwardBL(1000, true);
+					}
+					if(operation == 11)
+					{
+						ClawOpen();
+					}
 				}
 			}
-			else {
-				if(gameData.charAt(0) == 'L') {
-				}
-				else{
+			else 
+			{
+				if(gameData.charAt(1) == 'L')
+				{
+					//STARTING RIGHT - LEFT SCALE - LEFT SWITCH
+					if(operation == 0)
+					{
+						operation += driveForwardFR(5200, true);
+					}
+					if(operation == 1)
+					{
+						resetWheelEncoders();
+						Timer.delay(0.3);
+						operation++;
+					}
+					if(operation == 2)
+					{
+						operation += driveLeft(5300);
+					}
+					if(operation == 3)
+					{
+						resetWheelEncoders();
+						Timer.delay(0.3);
+						operation++;
+					}
+					if(operation == 4)
+					{
+						operation += driveForwardFR(2000, false);
+					}
+					if(operation == 5)
+					{
+						operation += pidTurnExact(60.0);
+					}
+					if(operation == 6)
+					{
+						operation += elevatorPosition(35000);
+					}
+					if(operation == 7)
+					{
+						elevatorPositionHold();
+						ClawRotateUp();
+						Timer.delay(0.075);
+						ClawStop();
+						Timer.delay(0.1);
+						ClawOutput();
+						Timer.delay(0.5);
+						ClawStandby();
+						EController.disable();
+						ElevatorHold();
+						resetWheelEncoders();
+						Timer.delay(0.3);
+						operation++;
+					}
+					if(operation == 8)
+					{
+						EController.enable();
+						operation += elevatorPosition(1000);
+
+					}
+					if(operation == 9)
+					{
+						elevatorPositionHold();
+						operation += pidTurnExact(150);
+					}
+					if(operation == 10)
+					{
+						ClawRotateUp();
+						Timer.delay(0.5);
+						ClawStop();
+						ClawOpen();
+						ClawIntake();
+						resetWheelEncoders();
+						Timer.delay(0.3);
+						ahrs.reset();
+						operation++;
+					}
+					if(operation == 11)
+					{
+						operation += driveForwardFR(2100, false);
+					}
+					if(operation == 12)
+					{
+						ClawClose();
+						Timer.delay(1.0);
+						ClawStandby();
+						resetWheelEncoders();
+						Timer.delay(0.3);
+						operation++;
+					}
+					if(operation == 13)
+					{
+						EController.enable();
+						operation += elevatorPosition(30000);
+					}
+					if(operation == 14)
+					{
+						ElevatorHold();
+						EController.disable();
+						operation += driveForwardFR(1000, false);
+					}
+					if(operation == 15)
+					{
+						ClawOpen();
+					}
 				}
 			}
 			break;
@@ -392,383 +762,17 @@ public class Robot extends IterativeRobot
 			SmartDashboard.putString("AUTO", "Left - Scoring Scale... Twice!");
 			if(gameData.charAt(1) == 'L')
 			{
+
 			}
-			else {
+			else 
+			{
+
 			}
 			break;
 		case R_SCALE_SCALE:
 			SmartDashboard.putString("AUTO", "Right  - Scoring Scale... Twice!");
-			if(gameData.charAt(1) == 'L')
-			{
-			}
-			else {
-			}
-			break;
-		}
-		*/
-		
-		//STARTING LEFT - LEFT SCALE - LEFT SWITCH
-		if(operation == 0)
-		{
-			operation += driveForwardBL(7100, true);
-			elevatorPosition(35000);
-		}
-		if(operation == 1)
-		{
-			pidTurnExact(60.0);
-		}
-		if(operation == 2)
-		{
 			
-		}
-		if(operation == 3)
-		{
-			elevatorPositionHold();
-			ClawRotateUp();
-			Timer.delay(0.075);
-			ClawStop();
-			Timer.delay(0.1);
-			ClawOutput();
-			Timer.delay(0.5);
-			ClawStandby();
-			EController.disable();
-			ElevatorHold();
-			resetWheelEncoders();
-			Timer.delay(0.3);
-			operation++;
-		}
-		if(operation == 4)
-		{
-			EController.enable();
-			operation += elevatorPosition(1000);
-			
-		}
-		if(operation == 5)
-		{
-			elevatorPositionHold();
-			operation += pidTurnExact(150);
-		}
-		if(operation == 6)
-		{
-			ClawRotateUp();
-			Timer.delay(0.5);
-			ClawStop();
-			ClawOpen();
-			ClawIntake();
-			ahrs.reset();
-			operation++;
-		}
-		if(operation == 7)
-		{
-			operation += driveForwardBL(2400, false);
-		}
-		if(operation == 8)
-		{
-			ClawClose();
-			Timer.delay(1.0);
-			ClawStandby();
-			resetWheelEncoders();
-			Timer.delay(0.3);
-			operation++;
-		}
-		if(operation == 9)
-		{
-			EController.enable();
-			operation += elevatorPosition(30000);
-		}
-		if(operation == 10)
-		{
-			ElevatorHold();
-			EController.disable();
-			operation += driveForwardBL(1000, false);
-		}
-		if(operation == 11)
-		{
-			ClawOpen();
-		}
-		
-		/*
-		//STARTING RIGHT - RIGHT SCALE - RIGHT SWITCH
-		if(operation == 0)
-		{
-			operation += driveForward(7000, false);
-		}
-		if(operation == 1)
-		{
-			operation += pidTurnExact(-60.0);
-		}
-		if(operation == 2)
-		{
-			operation += elevatorPosition(35000);
-		}
-		if(operation == 3)
-		{
-			elevatorPositionHold();
-			ClawRotateUp();
-			Timer.delay(0.075);
-			ClawStop();
-			Timer.delay(0.1);
-			ClawOutput();
-			Timer.delay(0.5);
-			ClawStandby();
-			EController.disable();
-			ElevatorHold();
-			resetWheelEncoders();
-			Timer.delay(0.3);
-			operation++;
-		}
-		if(operation == 4)
-		{
-			EController.enable();
-			operation += elevatorPosition(1000);
-			
-		}
-		if(operation == 5)
-		{
-			elevatorPositionHold();
-			operation += pidTurnExact(-150);
-		}
-		if(operation == 6)
-		{
-			ClawRotateUp();
-			Timer.delay(0.5);
-			ClawStop();
-			ClawOpen();
-			ClawIntake();
-			ahrs.reset();
-			operation++;
-		}
-		if(operation == 7)
-		{
-			operation += driveForward(2100, true);
-		}
-		if(operation == 8)
-		{
-			ClawClose();
-			Timer.delay(1.0);
-			ClawStandby();
-			resetWheelEncoders();
-			Timer.delay(0.3);
-			operation++;
-		}
-		if(operation == 9)
-		{
-			EController.enable();
-			operation += elevatorPosition(30000);
-		}
-		if(operation == 10)
-		{
-			ElevatorHold();
-			EController.disable();
-			operation += driveForward(1000, true);
-		}
-		if(operation == 11)
-		{
-			ClawOpen();
-		}
-		*/
-		
-		//STARTING LEFT _ RIGHT SCALE _ RIGHT SWITCH
-		/*
-		if(operation == 0)
-		{
-			operation += driveForwardBL(5700, true);
-		}
-		if(operation == 1)
-		{
-			operation += driveRight(7800);
-		}
-		if(operation == 2)
-		{
-			resetWheelEncoders();
-			Timer.delay(0.3);
-			operation++;
-		}
-		if(operation == 3)
-		{
-			operation += driveForwardBL(1000, false);
-		}
-		if(operation == 4)
-		{
-			operation += pidTurnExact(-60.0);
-		}
-		if(operation == 5)
-		{
-			operation += elevatorPosition(35000);
-		}
-		if(operation == 6)
-		{
-			elevatorPositionHold();
-			ClawRotateUp();
-			Timer.delay(0.075);
-			ClawStop();
-			Timer.delay(0.1);
-			ClawShoot();
-			Timer.delay(0.5);
-			ClawStandby();
-			EController.disable();
-			ElevatorHold();
-			resetWheelEncoders();
-			Timer.delay(0.3);
-			operation++;
-		}
-		if(operation == 7)
-		{
-			EController.enable();
-			operation += elevatorPosition(1000);
-			
-		}
-		if(operation == 8)
-		{
-			elevatorPositionHold();
-			operation += pidTurnExact(-150);
-		}
-		if(operation == 9)
-		{
-			ClawRotateUp();
-			Timer.delay(0.5);
-			ClawStop();
-			ClawOpen();
-			ClawIntake();
-			resetWheelEncoders();
-			Timer.delay(0.3);
-			ahrs.reset();
-			operation++;
-		}
-		if(operation == 10)
-		{
-			operation += driveForwardBL(2100, true);
-		}
-		if(operation == 11)
-		{
-			ClawClose();
-			Timer.delay(1.0);
-			ClawStandby();
-			resetWheelEncoders();
-			Timer.delay(0.3);
-			operation++;
-		}
-		if(operation == 12)
-		{
-			EController.enable();
-			operation += elevatorPosition(30000);
-		}
-		if(operation == 13)
-		{
-			ElevatorHold();
-			EController.disable();
-			operation += driveForwardBL(1000, true);
-		}
-		if(operation == 14)
-		{
-			ClawOpen();
-		}
-		*/
-		
-		
-		//STARTING RIGHT - LEFT SCALE - LEFT SWITCH
-		/*
-		if(operation == 0)
-		{
-			operation += driveForwardFR(5500, true);
-		}
-		if(operation == 1)
-		{
-			resetWheelEncoders();
-			Timer.delay(0.3);
-			operation++;
-		}
-		if(operation == 2)
-		{
-			operation += driveLeft(5250);
-		}
-		if(operation == 3)
-		{
-			resetWheelEncoders();
-			Timer.delay(0.3);
-			operation++;
-		}
-		if(operation == 4)
-		{
-			operation += driveForwardFR(2500, false);
-		}
-		if(operation == 5)
-		{
-			operation += pidTurnExact(60.0);
-		}
-		if(operation == 6)
-		{
-			operation += elevatorPosition(35000);
-		}
-		if(operation == 7)
-		{
-			elevatorPositionHold();
-			ClawRotateUp();
-			Timer.delay(0.075);
-			ClawStop();
-			Timer.delay(0.1);
-			ClawOutput();
-			Timer.delay(0.5);
-			ClawStandby();
-			EController.disable();
-			ElevatorHold();
-			resetWheelEncoders();
-			Timer.delay(0.3);
-			operation++;
-		}
-		if(operation == 8)
-		{
-			EController.enable();
-			operation += elevatorPosition(1000);
-			
-		}
-		if(operation == 9)
-		{
-			elevatorPositionHold();
-			operation += pidTurnExact(150);
-		}
-		if(operation == 10)
-		{
-			ClawRotateUp();
-			Timer.delay(0.5);
-			ClawStop();
-			ClawOpen();
-			ClawIntake();
-			resetWheelEncoders();
-			Timer.delay(0.3);
-			ahrs.reset();
-			operation++;
-		}
-		if(operation == 11)
-		{
-			operation += driveForwardFR(2100, false);
-		}
-		if(operation == 12)
-		{
-			ClawClose();
-			Timer.delay(1.0);
-			ClawStandby();
-			resetWheelEncoders();
-			Timer.delay(0.3);
-			operation++;
-		}
-		if(operation == 13)
-		{
-			EController.enable();
-			operation += elevatorPosition(30000);
-		}
-		if(operation == 14)
-		{
-			ElevatorHold();
-			EController.disable();
-			operation += driveForwardFR(1000, false);
-		}
-		if(operation == 15)
-		{
-			ClawOpen();
-		}
-		*/
-		
+		}	
 
 		//stop taking air when pneumatics reaches 120 psi
 		if (pressureSwitch) 
@@ -805,6 +809,10 @@ public class Robot extends IterativeRobot
 		getButtonLT_Operator = operatorPad.getButton(LogitechDualAction.LogitechButton.LEFT_TRIGGER);
 		leftStickY_Operator = operatorPad.getValue(LogitechDualAction.LogitechControl.LEFT_STICK, LogitechDualAction.LogitechAxis.Y);
 		rightStickY_Operator = operatorPad.getValue(LogitechDualAction.LogitechControl.RIGHT_STICK, LogitechDualAction.LogitechAxis.Y );
+		getButtonY_Operator = operatorPad.getButton(LogitechDualAction.LogitechButton.Y);
+		getButtonX_Operator = operatorPad.getButton(LogitechDualAction.LogitechButton.X);
+		getButtonA_Operator = operatorPad.getButton(LogitechDualAction.LogitechButton.A);
+		getButtonB_Operator = operatorPad.getButton(LogitechDualAction.LogitechButton.B);
 
 		//gets yaw from gyro continuously
 		angle = ahrs.getYaw();
@@ -863,9 +871,17 @@ public class Robot extends IterativeRobot
 			turnController.disable();
 			currentRotationRate = rightStickX;
 		}
+		
+		if(getTicks(rightElevator) < -45000)
+		{
+			driveFailSafe = 0.5;
+		}else
+		{
+			driveFailSafe = 1.0;
+		}
 
 		//Calls upon the mecanumDrive_Cartesian method that sends specific power to the talons
-		drivetrain.driveCartesian (leftStickX, leftStickY, currentRotationRate * 0.75, -angle);
+		drivetrain.driveCartesian (leftStickX * driveFailSafe, leftStickY * driveFailSafe, currentRotationRate * 0.75 * driveFailSafe, -angle);
 
 		//Setting speeds for the claw's motors to intake or shoot out the cube
 		//Left Bumper intakes, Left Trigger spits out cube
@@ -907,13 +923,39 @@ public class Robot extends IterativeRobot
 		if (leftStickY_Operator > 0.25 && getTicks(rightElevator) < -3000)
 		{
 			ElevatorDown();
-		}else if (leftStickY_Operator < -0.25)
+		}else if (leftStickY_Operator < -0.25 && getTicks(rightElevator) > -52000)
 		{
 			ElevatorUp();
 		}
 		else 
 		{
 			ElevatorHold();
+		}
+
+		//elevator preset buttons
+		rotateToHeight = false;
+		if (getButtonY_Operator) {
+			rotateToHeight = true;
+			EController.enable();
+			elevatorPosition(52000);
+		}
+		else if (getButtonX_Operator) {
+			rotateToHeight = true;
+			EController.enable();
+			elevatorPosition(20000);
+		}
+		else if (getButtonB_Operator) {
+			rotateToHeight = true;
+			EController.enable();
+			elevatorPosition(10000);
+		}
+		else if (getButtonA_Operator) {
+			rotateToHeight = true;
+			EController.enable();
+			elevatorPosition(800);
+		}
+		else {
+			EController.disable();
 		}
 
 		//Right stick on operator controller raises/lowers claw based on input - otherwise it holds
@@ -1013,8 +1055,8 @@ public class Robot extends IterativeRobot
 	//Spits out the cube
 	private void ClawOutput()
 	{
-		IntakeL.set(-0.6);
-		IntakeR.set(0.6);
+		IntakeL.set(-0.5);
+		IntakeR.set(0.5);
 	}
 
 	//Gives the operator an option to shoot the cube farther distances
@@ -1112,7 +1154,7 @@ public class Robot extends IterativeRobot
 			return 0;
 		}
 	}
-	
+
 	private void elevatorPositionHold()
 	{
 		rightElevator.set(ESpeed);
@@ -1134,9 +1176,9 @@ public class Robot extends IterativeRobot
 
 		//BACK RIGHT
 		BRController.setSetpoint(ticks);
-		
+
 		avgSpeed = (FLSpeed + BLSpeed - FRSpeed - BRSpeed / 4);
-		
+
 		//Determining field centric usage
 		if(setFieldCentric)
 		{
@@ -1148,7 +1190,7 @@ public class Robot extends IterativeRobot
 				return 1;
 			}else
 			{
-				drivetrain.driveCartesian(-0.077, avgSpeed, forwardPID(), -angle);
+				drivetrain.driveCartesian(-0.076, avgSpeed, forwardPID(), -angle);
 				return 0;
 			}
 		}else
@@ -1165,7 +1207,7 @@ public class Robot extends IterativeRobot
 			}
 		}
 	}
-	
+
 	private int driveForwardFR(double ticks, boolean setFieldCentric)
 	{
 		//FRONT LEFT
@@ -1179,9 +1221,9 @@ public class Robot extends IterativeRobot
 
 		//BACK RIGHT
 		BRController.setSetpoint(ticks);
-		
+
 		avgSpeed = (FLSpeed + BLSpeed - FRSpeed - BRSpeed / 4);
-		
+
 		//Determining field centric usage
 		if(setFieldCentric)
 		{
@@ -1227,7 +1269,7 @@ public class Robot extends IterativeRobot
 		BRController.setSetpoint(-ticks);
 
 		avgSpeed = (FLSpeed + BLSpeed - FRSpeed - BRSpeed / 4);
-		
+
 		if(Math.abs(getTicks(backRightDrive)) >= ticks - tolerance && Math.abs(getTicks(backRightDrive)) <= ticks + tolerance)
 		{
 			resetWheelEncoders();
@@ -1256,7 +1298,7 @@ public class Robot extends IterativeRobot
 		BRController.setSetpoint(ticks);
 
 		avgSpeed = (FLSpeed + BLSpeed - FRSpeed - BRSpeed / 4);
-		
+
 		if(Math.abs(getTicks(backRightDrive)) >= ticks - tolerance && Math.abs(getTicks(backRightDrive)) <= ticks + tolerance)
 		{
 			resetWheelEncoders();
@@ -1285,7 +1327,7 @@ public class Robot extends IterativeRobot
 		BRController.setSetpoint(-ticks);
 
 		avgSpeed = (FLSpeed + BLSpeed - FRSpeed - BRSpeed / 4);
-		
+
 		//Determining field centric usage
 		if(setFieldCentric)
 		{
@@ -1295,7 +1337,7 @@ public class Robot extends IterativeRobot
 			//To drive straight without using field-centric
 			angle = 0.0;
 		}
-		
+
 		if(Math.abs(getTicks(backRightDrive)) >= ticks - tolerance && Math.abs(getTicks(backRightDrive)) <= ticks + tolerance)
 		{
 			resetWheelEncoders();

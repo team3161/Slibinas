@@ -168,7 +168,7 @@ public class Robot extends IterativeRobot
 		autoModeChooser = new SendableChooser<Integer>();
 		//EnumSet.complementOf(EnumSet.of(AutoMode.SWITCH)).forEach(mode -> autoModeChooser.addObject(mode.toString(), mode));
 		//Default Auto Mode  is scoring switch when starting from middle
-		autoModeChooser.addDefault("Default (SWITCH):", 1);
+		autoModeChooser.addDefault("Starting Middle (SWITCH):", 1);
 		autoModeChooser.addObject("Starting Left ", 2);
 		autoModeChooser.addObject("Starting Right ", 3);
 
@@ -430,7 +430,7 @@ public class Robot extends IterativeRobot
 				}
 			}else if(gameData.charAt(0) == 'L' && gameData.charAt(1) == 'R')
 			{
-				//LEFT SWITCH & RIGHT SCALE
+				//STARTING LEFT - LEFT SWITCH & RIGHT SCALE
 			}else if(gameData.charAt(0) == 'R' && gameData.charAt(1) == 'R')
 			{
 				//STARTING LEFT _ RIGHT SCALE _ RIGHT SWITCH
@@ -527,7 +527,7 @@ public class Robot extends IterativeRobot
 				}
 			}else if(gameData.charAt(0) == 'R' && gameData.charAt(1) == 'L')
 			{
-				//RIGHT SWITCH & LEFT SCALE
+				//STARTING LEFT - RIGHT SWITCH & LEFT SCALE
 			}
 			
 		case 3:

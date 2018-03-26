@@ -262,7 +262,9 @@ public class Robot extends TimedRobot
 
 		//gyro readings for kmxp
 		ahrs = new AHRS(SPI.Port.kMXP);
+		ahrs.reset();
 
+		
 		//Reads in gyro from I2C connections
 		//ahrs = new AHRS (I2C.Port.kOnboard);
 
@@ -1080,7 +1082,6 @@ public class Robot extends TimedRobot
 						ClawIntake();
 						resetWheelEncoders();
 						Timer.delay(0.3);
-						ahrs.reset();
 						operation++;
 					}
 					if(operation == 10)
@@ -2240,7 +2241,6 @@ public class Robot extends TimedRobot
 	public void teleopInit()
 	{
 		drivetrain.setSafetyEnabled(true);
-		ahrs.reset();
 		resetWheelEncoders();
 		FLController.disable();
 		FRController.disable();
@@ -2670,7 +2670,6 @@ public class Robot extends TimedRobot
 			Timer.delay(AUTO_PID_LOOP_PERIOD);
 		}
 		resetWheelEncoders();
-		ahrs.reset();
 		drivetrain.stopMotor();
 		FLController.disable();
 		FRController.disable();
@@ -2727,7 +2726,6 @@ public class Robot extends TimedRobot
 			Timer.delay(AUTO_PID_LOOP_PERIOD);
 		}
 		resetWheelEncoders();
-		ahrs.reset();
 		drivetrain.stopMotor();
 		FLController.disable();
 		FRController.disable();
@@ -2765,7 +2763,6 @@ public class Robot extends TimedRobot
 			Timer.delay(AUTO_PID_LOOP_PERIOD);
 		}
 		resetWheelEncoders();
-		ahrs.reset();
 		drivetrain.stopMotor();
 		FLController.disable();
 		FRController.disable();
@@ -2803,7 +2800,6 @@ public class Robot extends TimedRobot
 			Timer.delay(AUTO_PID_LOOP_PERIOD);
 		}
 		resetWheelEncoders();
-		ahrs.reset();
 		drivetrain.stopMotor();
 		FLController.disable();
 		FRController.disable();

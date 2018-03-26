@@ -2420,7 +2420,7 @@ public class Robot extends TimedRobot
 		}
 		else if (getButtonX_Operator) {
 			EController.enable();
-			elevatorPosition(30000);
+			elevatorPosition(25000);
 		}
 		else if (getButtonB_Operator) {
 			EController.enable();

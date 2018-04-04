@@ -1,15 +1,5 @@
 package ca.team3161.robot;
 
-import com.ctre.phoenix.motorcontrol.ControlMode;
-import com.ctre.phoenix.motorcontrol.FeedbackDevice;
-import com.ctre.phoenix.motorcontrol.can.WPI_TalonSRX;
-import com.kauailabs.navx.frc.AHRS;
-
-import ca.team3161.lib.utils.controls.InvertedJoystickMode;
-import ca.team3161.lib.utils.controls.LogitechDualAction;
-import ca.team3161.lib.utils.controls.LogitechDualAction.LogitechAxis;
-import ca.team3161.lib.utils.controls.LogitechDualAction.LogitechControl;
-import ca.team3161.lib.utils.controls.SquaredJoystickMode;
 import edu.wpi.first.wpilibj.Compressor;
 import edu.wpi.first.wpilibj.DoubleSolenoid;
 import edu.wpi.first.wpilibj.DriverStation;
@@ -24,7 +14,7 @@ import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 
 public class Robot extends TimedRobot
 { 
-	private static final double AUTO_PID_LOOP_PERIOD = 0.015;
+	private static final int AUTO_PID_LOOP_PERIOD = 15;
 	private static final int DRIVETRAIN_PEAK_CURRENT_AMP_LIMIT = 35;
 	private static final int DRIVETRAIN_PEAK_CURRENT_DURATION = 10;
 	private static final int DRIVETRAIN_CONTINUOUS_CURRENT_AMP_LIMIT = 30;
@@ -42,6 +32,9 @@ public class Robot extends TimedRobot
 	private WPI_TalonSRX leftElevator = new WPI_TalonSRX (4);
 	private VictorSP leftElevatorSlave = new VictorSP(0);
 	private WPI_TalonSRX rightElevator = new WPI_TalonSRX (6);
+
+	private boolean isWaiting = false;
+	private long waitStartTime = -1;
 
 	//Declaring the way the robot will drive - RoboDrive class
 	private MecanumDrive drivetrain;
@@ -136,6 +129,7 @@ public class Robot extends TimedRobot
 	boolean getButtonB_Operator;
 	boolean getButtonRB_Operator;
 	boolean getButtonLB;
+	boolean elevatorOverride;
 
 	//Need to set variables to use Pneumatics Control Module
 	private Compressor air = new Compressor(0);
@@ -159,7 +153,7 @@ public class Robot extends TimedRobot
 
 	//A counter that controls operations in autonomous
 	private int operation;
-	
+
 	private volatile Thread autoThread = null;
 
 	//objects to help select specific auto paths from the smartdashboard
@@ -237,24 +231,24 @@ public class Robot extends TimedRobot
 		frontRightDrive.configPeakCurrentDuration(DRIVETRAIN_PEAK_CURRENT_DURATION, 10);
 		frontRightDrive.configContinuousCurrentLimit(DRIVETRAIN_CONTINUOUS_CURRENT_AMP_LIMIT, 10);
 		frontRightDrive.enableCurrentLimit(true);
-		
+
 		backRightDrive.setInverted(false);
 		backRightDrive.configPeakCurrentLimit(DRIVETRAIN_PEAK_CURRENT_AMP_LIMIT, 10);
 		backRightDrive.configPeakCurrentDuration(DRIVETRAIN_PEAK_CURRENT_DURATION, 10);
 		backRightDrive.configContinuousCurrentLimit(DRIVETRAIN_CONTINUOUS_CURRENT_AMP_LIMIT, 10);
 		backRightDrive.enableCurrentLimit(true);
-		
+
 		backLeftDrive.setInverted(false);
 		backLeftDrive.configPeakCurrentLimit(DRIVETRAIN_PEAK_CURRENT_AMP_LIMIT, 10);
 		backLeftDrive.configPeakCurrentDuration(DRIVETRAIN_PEAK_CURRENT_DURATION, 10);
 		backLeftDrive.configContinuousCurrentLimit(DRIVETRAIN_CONTINUOUS_CURRENT_AMP_LIMIT, 10);
 		backLeftDrive.enableCurrentLimit(true);
-		
+
 		leftElevator.configPeakCurrentLimit(ELEVATOR_PEAK_CURRENT_AMP_LIMIT, 10);
 		leftElevator.configPeakCurrentDuration(ELEVATOR_PEAK_CURRENT_DURATION, 10);
 		leftElevator.configContinuousCurrentLimit(ELEVATOR_CONTINUOUS_CURRENT_AMP_LIMIT, 10);
 		leftElevator.enableCurrentLimit(true);
-		
+
 		rightElevator.configPeakCurrentLimit(ELEVATOR_PEAK_CURRENT_AMP_LIMIT, 10);
 		rightElevator.configPeakCurrentDuration(ELEVATOR_PEAK_CURRENT_DURATION, 10);
 		rightElevator.configContinuousCurrentLimit(ELEVATOR_CONTINUOUS_CURRENT_AMP_LIMIT, 10);
@@ -264,7 +258,7 @@ public class Robot extends TimedRobot
 		ahrs = new AHRS(SPI.Port.kMXP);
 		ahrs.reset();
 
-		
+
 		//Reads in gyro from I2C connections
 		//ahrs = new AHRS (I2C.Port.kOnboard);
 
@@ -364,32 +358,15 @@ public class Robot extends TimedRobot
 		fieldOrientations_RR = RR.getSelected();
 		fieldOrientations_LR = LR.getSelected();
 		fieldOrientations_RL = RL.getSelected();
-		
+
 		leftElevator.enableCurrentLimit(true);
 		rightElevator.enableCurrentLimit(true);
-		
-		if (this.autoThread != null) {
-			this.autoThread.interrupt();
-		}
-		
-		this.autoThread = new Thread(new Runnable() {
-			{
-				System.out.println("Auto Thread Initialized");
-			}
-			@Override
-			public void run() {
-				while (isEnabled() && isAutonomous()) {
-					autonomousRoutine();
-					Timer.delay(0.02);
-				}
-				autoThread = null;
-			}
-		});
-		this.autoThread.start();
+
 	}
 
 	public void autonomousRoutine()
 	{
+		//A function in the case that we don't want to try anything
 		if (selectedAutoMode.equals(StartingLocation.ABORT)) {
 			return;
 		}
@@ -397,8 +374,6 @@ public class Robot extends TimedRobot
 		//get air for pneumatics
 		/*
 		pressureSwitch = air.getPressureSwitchValue();
-
-
 		if (!pressureSwitch) 
 		{
 			air.setClosedLoopControl(true);
@@ -407,7 +382,7 @@ public class Robot extends TimedRobot
 
 		//START OF AUTONOMOUS
 		//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-		
+
 		if(gameData.charAt(0) == 'L' && gameData.charAt(1) == 'L')
 		{
 			//LL
@@ -419,44 +394,11 @@ public class Robot extends TimedRobot
 				{
 				case NONE:
 					//Drive straight past auto line
-					if(operation == 0)
-					{
-						operation += driveForward(5000, 0.0, true, backLeftDrive);
-					}
+					driveStraight();
 					break;
 				case one_scale:
 					//Score Left Scale
-					if(operation == 0)
-					{
-						operation += driveForward(7500, 0.0, true, backLeftDrive);
-					}
-					if(operation == 1)
-					{
-						operation += pidTurnExact(60.0);
-					}
-					if(operation == 2)
-					{
-						operation += elevatorPosition(35000);
-					}
-					if(operation == 3)
-					{
-						elevatorPosition(35000);
-						ClawRotateUp();
-						Timer.delay(0.075);
-						ClawStop();
-						Timer.delay(0.1);
-						ClawOutput();
-						Timer.delay(0.5);
-						ClawStandby();
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 4)
-					{
-						operation += elevatorPosition(1000);
-
-					}
+					left_LeftScale();
 					break;
 				case one_switch:
 					//Score left Switch
@@ -474,173 +416,19 @@ public class Robot extends TimedRobot
 					}
 					if(operation == 3)
 					{
-						Timer.delay(0.5);
+						waitFor(500);
 						ClawShoot();
-						Timer.delay(0.5);
+						waitFor(500);
 						ClawStandby();
 					}
 					break;
 				case one_switch_one_scale:
 					//Score Left Scale & Left Switch
-					if(operation == 0)
-					{
-						operation += driveForward(7000, 0.0, true, backLeftDrive);
-					}
-					if(operation == 1)
-					{
-						operation += pidTurnExact(60.0);
-					}
-					if(operation == 2)
-					{
-						operation += elevatorPosition(35000);
-					}
-					if(operation == 3)
-					{
-						elevatorPosition(35000);
-						ClawRotateUp();
-						Timer.delay(0.075);
-						ClawStop();
-						Timer.delay(0.1);
-						ClawOutput();
-						Timer.delay(0.5);
-						ClawStandby();
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 4)
-					{
-						operation += elevatorPosition(1000);
-
-					}
-					if(operation == 5)
-					{
-						elevatorPosition(1000);
-						operation += pidTurnExact(150);
-					}
-					if(operation == 6)
-					{
-						ClawRotateUp();
-						Timer.delay(0.5);
-						ClawStop();
-						ClawOpen();
-						ClawIntake();
-						operation++;
-					}
-					if(operation == 7)
-					{
-						elevatorPosition(1000);
-						operation += driveForward(2400, 150.0, false, backLeftDrive);
-					}
-					if(operation == 8)
-					{
-						elevatorPosition(1000);
-						ClawClose();
-						Timer.delay(1.0);
-						ClawStandby();
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 9)
-					{
-						operation += elevatorPosition(30000);
-					}
-					if(operation == 10)
-					{
-						elevatorPosition(30000);
-						operation += driveForward(1000, 150, false, backLeftDrive);
-					}
-					if(operation == 11)
-					{
-						ClawOpen();
-					}
+					left_LeftScaleLeftSwitch();
 					break;
 				case two_scale:
 					//Score Left Scale x2
-					if(operation == 0)
-					{
-						operation += driveForward(7500, 0.0, true, backLeftDrive);
-					}
-					if(operation == 1)
-					{
-						operation += pidTurnExact(60.0);
-					}
-					if(operation == 2)
-					{
-						operation += elevatorPosition(35000);
-					}
-					if(operation == 3)
-					{
-						ClawRotateUp();
-						Timer.delay(0.075);
-						ClawStop();
-						Timer.delay(0.1);
-						ClawOutput();
-						Timer.delay(0.3);
-						ClawStandby();
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 4)
-					{
-						operation += elevatorPosition(1000);
-
-					}
-					if(operation == 5)
-					{
-						operation += pidTurnExact(150);
-					}
-					if(operation == 6)
-					{
-						ClawRotateUp();
-						Timer.delay(0.5);
-						ClawStop();
-						ClawOpen();
-						ClawIntake();
-						operation++;
-					}
-					if(operation == 7)
-					{
-						operation += driveForward(2400, 150.0, false, backLeftDrive);
-					}
-					if(operation == 8)
-					{
-						ClawClose();
-						Timer.delay(0.3);
-						ClawStandby();
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 9)
-					{
-						operation += pidTurnExact(-30);
-					}
-					if(operation == 10)
-					{
-						operation += driveForward(2000, -30, false, backLeftDrive);
-					}
-					if(operation == 11)
-					{
-						operation += pidTurnExact(0.0);
-					}
-					if(operation == 12)
-					{
-						operation += elevatorPosition(52000);
-					}
-					if(operation == 13)
-					{
-						driveForward(300, 0.0, true, backLeftDrive);
-					}
-					if(operation == 14)
-					{
-						ClawOutput();
-						Timer.delay(0.5);
-						ClawStandby();
-						operation++;
-					}
+					left_TwoLeftScale();
 					break;
 				default:
 					break;
@@ -649,36 +437,7 @@ public class Robot extends TimedRobot
 				break;
 			case MIDDLE:
 				//Start Middle - L Switch
-				if(operation == 0)
-				{
-					operation += driveForward(1500, 0.0, true, backLeftDrive);
-				}
-				if(operation == 1)
-				{
-					operation++;
-				}
-				if(operation == 2)
-				{
-					operation += driveLeft(1800, 0.0, backRightDrive);
-				}
-				if(operation == 3)
-				{
-					operation += driveForward(1900, 0.0, true, backRightDrive);
-				}
-				if(operation == 4)
-				{
-					operation += pidTurnExact(0.0);
-				}
-				if(operation == 5)
-				{
-					pidTurnExact(0.0);
-					Timer.delay(0.3);
-					ClawOutput();
-					Timer.delay(0.5);
-					ClawStandby();
-					operation++;
-				}
-
+				middle_LeftSwitch();
 				break;
 			case RIGHT:
 				//Start Right - LL
@@ -686,264 +445,22 @@ public class Robot extends TimedRobot
 				{
 				case NONE:
 					//Drive straight past auto line
-					if(operation == 0)
-					{
-						operation += driveForward(3000, 0.0, true, backLeftDrive);
-					}
+					driveStraight();
 					break;
 				case one_scale:
 					//Cross field 1 Cube Scale
-					if(operation == 0)
-					{
-						operation += driveForward(6000, 0.0, true, frontRightDrive);
-					}
-					if(operation == 1)
-					{
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 2)
-					{
-						operation += driveLeft(7700, 0.0, backLeftDrive);
-					}
-					if(operation == 3)
-					{
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 4)
-					{
-						operation += driveForward(2500, 0.0, true, frontRightDrive);
-					}
-					if(operation == 5)
-					{
-						operation += pidTurnExact(60.0);
-					}
-					if(operation == 6)
-					{
-						operation += elevatorPosition(35000);
-					}
-					if(operation == 7)
-					{
-						ClawRotateUp();
-						Timer.delay(0.075);
-						ClawStop();
-						Timer.delay(0.1);
-						ClawOutput();
-						Timer.delay(0.5);
-						ClawStandby();
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 8)
-					{
-						operation += elevatorPosition(1000);
-					}
+					right_LeftScale();
 					break;
 				case one_switch:
 					//Cross field 1 Switch
 					break;
 				case one_switch_one_scale:
 					//Cross field 1 Scale and 1 Switch
-					if(operation == 0)
-					{
-						operation += driveForward(5200, 0.0, true, frontRightDrive);
-					}
-					if(operation == 1)
-					{
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 2)
-					{
-						operation += driveLeft(7700, 0.0, backLeftDrive);
-					}
-					if(operation == 3)
-					{
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 4)
-					{
-						operation += driveForward(2000, 0.0, true, frontRightDrive);
-					}
-					if(operation == 5)
-					{
-						operation += pidTurnExact(60.0);
-					}
-					if(operation == 6)
-					{
-						operation += elevatorPosition(35000);
-					}
-					if(operation == 7)
-					{
-						ClawRotateUp();
-						Timer.delay(0.075);
-						ClawStop();
-						Timer.delay(0.1);
-						ClawOutput();
-						Timer.delay(0.5);
-						ClawStandby();
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 8)
-					{
-						operation += elevatorPosition(1000);
-					}
-					if(operation == 9)
-					{
-						operation += pidTurnExact(150);
-					}
-					if(operation == 10)
-					{
-						ClawRotateUp();
-						Timer.delay(0.5);
-						ClawStop();
-						ClawOpen();
-						ClawIntake();
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 11)
-					{
-						operation += driveForward(2100, 150.0, false, frontRightDrive);
-					}
-					if(operation == 12)
-					{
-						ClawClose();
-						Timer.delay(1.0);
-						ClawStandby();
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 13)
-					{
-						operation += elevatorPosition(30000);
-					}
-					if(operation == 14)
-					{
-						operation += driveForward(1000, 150.0, false, frontRightDrive);
-					}
-					if(operation == 15)
-					{
-						ClawOpen();
-					}
+					right_LeftScaleLeftSwitch();
 					break;
 				case two_scale:
 					//Cross field 2 Cube
-					if(operation == 0)
-					{
-						operation += driveForward(6250, 0.0, true, frontRightDrive);
-					}
-					if(operation == 1)
-					{
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 2)
-					{
-						operation += driveLeft(7700, 0.0, backLeftDrive);
-					}
-					if(operation == 3)
-					{
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 4)
-					{
-						operation += driveForward(2000, 0.0, true, frontRightDrive);
-					}
-					if(operation == 5)
-					{
-						operation += pidTurnExact(60.0);
-					}
-					if(operation == 6)
-					{
-						operation += elevatorPosition(35000);
-					}
-					if(operation == 7)
-					{
-						ClawRotateUp();
-						Timer.delay(0.075);
-						ClawStop();
-						Timer.delay(0.1);
-						ClawOutput();
-						Timer.delay(0.5);
-						ClawStandby();
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 8)
-					{
-						operation += elevatorPosition(1000);
-					}
-					if(operation == 9)
-					{
-						operation += pidTurnExact(150);
-					}
-					if(operation == 10)
-					{
-						ClawRotateUp();
-						Timer.delay(0.5);
-						ClawStop();
-						ClawOpen();
-						ClawIntake();
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 11)
-					{
-						operation += driveForward(2100, 150.0, false, frontRightDrive);
-					}
-					if(operation == 12)
-					{
-						ClawClose();
-						Timer.delay(0.3);
-						ClawStandby();
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 13)
-					{
-						operation += pidTurnExact(-30);
-					}
-					if(operation == 14)
-					{
-						operation += driveForward(1900, -30, false, backLeftDrive);
-					}
-					if(operation == 15)
-					{
-						operation += pidTurnExact(0.0);
-					}
-					if(operation == 16)
-					{
-						operation += elevatorPosition(52000);
-					}
-					if(operation == 17)
-					{
-						operation += driveForward(300, 0.0, true, backLeftDrive);
-					}
-					if(operation == 18)
-					{
-						ClawOutput();
-						Timer.delay(0.3);
-						ClawStandby();
-						operation++;
-					}
+					right_TwoLeftScale();
 					break;
 				default:
 					break;
@@ -964,287 +481,31 @@ public class Robot extends TimedRobot
 				{
 				case NONE:
 					//Drive past auto line
-					if(operation == 0)
-					{
-						operation += driveForward(5000, 0.0, true, backLeftDrive);
-					}
+					driveStraight();
 					break;
 				case one_scale:
 					//Cross field 1 Cube Scale
-					if(operation == 0)
-					{
-						operation += driveForward(6100, 0.0, true, backLeftDrive);
-					}
-					if(operation == 1)
-					{
-						operation += driveRight(7700, 0.0, backLeftDrive);
-					}
-					if(operation == 2)
-					{
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 3)
-					{
-						operation += driveForward(1500, 0.0, true, backLeftDrive);
-					}
-					if(operation == 4)
-					{
-						operation += pidTurnExact(-60.0);
-					}
-					if(operation == 5)
-					{
-						operation += elevatorPosition(35000);
-					}
-					if(operation == 6)
-					{
-						elevatorPosition(35000);
-						ClawRotateUp();
-						Timer.delay(0.075);
-						ClawStop();
-						Timer.delay(0.1);
-						ClawShoot();
-						Timer.delay(0.5);
-						ClawStandby();
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 7)
-					{
-						operation += elevatorPosition(2000);
-
-					}
+					left_RightScale();
 					break;
 				case one_switch:
 					//Cross field 1 Cube Switch
 					break;
 				case one_switch_one_scale:
 					//Cross field 1 Scale and 1 Switch
-					if(operation == 0)
-					{
-						operation += driveForward(6100, 0.0, true, backLeftDrive);
-					}
-					if(operation == 1)
-					{
-						operation += driveRight(7700, 0.0, backLeftDrive);
-					}
-					if(operation == 2)
-					{
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 3)
-					{
-						operation += driveForward(1000, 0.0, true, backLeftDrive);
-					}
-					if(operation == 4)
-					{
-						operation += pidTurnExact(-60.0);
-					}
-					if(operation == 5)
-					{
-						operation += elevatorPosition(35000);
-					}
-					if(operation == 6)
-					{
-						elevatorPosition(35000);
-						ClawRotateUp();
-						Timer.delay(0.075);
-						ClawStop();
-						Timer.delay(0.1);
-						ClawShoot();
-						Timer.delay(0.5);
-						ClawStandby();
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 7)
-					{
-						operation += elevatorPosition(1000);
-
-					}
-					if(operation == 8)
-					{
-						elevatorPosition(1000);
-						operation += pidTurnExact(-150);
-					}
-					if(operation == 9)
-					{
-						elevatorPosition(1000);
-						ClawRotateUp();
-						Timer.delay(0.5);
-						ClawStop();
-						ClawOpen();
-						ClawIntake();
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 10)
-					{
-						elevatorPosition(1000);
-						operation += driveForward(2100, -150.0, false, backLeftDrive);
-					}
-					if(operation == 11)
-					{
-						elevatorPosition(1000);
-						ClawClose();
-						Timer.delay(1.0);
-						ClawStandby();
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 12)
-					{
-						operation += elevatorPosition(30000);
-					}
-					if(operation == 13)
-					{
-						elevatorPosition(30000);
-						operation += driveForward(1000, -150.0, false, backLeftDrive);
-					}
-					if(operation == 14)
-					{
-						ClawOpen();
-					}
+					left_RightScaleRightSwitch();
 					break;
 				case two_scale:
 					//Cross field 2 Cube Scale
-					if(operation == 0)
-					{
-						operation += driveForward(6200, 0.0, true, backLeftDrive);
-					}
-					if(operation == 1)
-					{
-						operation += driveRight(7700, 0.0, backLeftDrive);
-					}
-					if(operation == 2)
-					{
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 3)
-					{
-						operation += driveForward(1500, 0.0, true, backLeftDrive);
-					}
-					if(operation == 4)
-					{
-						operation += pidTurnExact(-60.0);
-					}
-					if(operation == 5)
-					{
-						operation += elevatorPosition(35000);
-					}
-					if(operation == 6)
-					{
-						ClawRotateUp();
-						Timer.delay(0.075);
-						ClawStop();
-						Timer.delay(0.1);
-						ClawShoot();
-						Timer.delay(0.5);
-						ClawStandby();
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 7)
-					{
-						operation += elevatorPosition(1000);
-					}
-					if(operation == 8)
-					{
-						operation += pidTurnExact(-150);
-					}
-					if(operation == 9)
-					{
-						ClawRotateUp();
-						Timer.delay(0.5);
-						ClawStop();
-						ClawOpen();
-						ClawIntake();
-						operation++;
-					}
-					if(operation == 10)
-					{
-						operation += driveForward(2100, -150.0, false, backLeftDrive);
-					}
-					if(operation == 11)
-					{
-						ClawClose();
-						Timer.delay(0.3);
-						ClawStandby();
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 12)
-					{
-						operation += pidTurnExact(30);
-					}
-					if(operation == 13)
-					{
-						operation += driveForward(2000, 30, false, backLeftDrive);
-					}
-					if(operation == 14)
-					{
-						operation += pidTurnExact(0.0);
-					}
-					if(operation == 15)
-					{
-						operation += elevatorPosition(52000);
-					}
-					if(operation == 16)
-					{
-						operation += driveForward(300, 0.0, true, backLeftDrive);
-					}
-					if(operation == 17)
-					{
-						ClawOutput();
-						Timer.delay(0.5);
-						ClawStandby();
-					}
-					
+					left_TwoRightScale();
 					break;
 				default:
 					break;
 				}
 				break;
-				
+
 			case MIDDLE:
 				//Start Middle - Right Switch
-				if(operation == 0)
-				{
-					operation += driveForward(1500, 0.0, true, backLeftDrive);
-				}
-				if(operation == 1)
-				{
-					operation += driveRight(2200, 0.0, backRightDrive);
-				}
-				if(operation == 2)
-				{
-					operation += driveForward(2200, 0.0, true, backLeftDrive);
-				}
-				if(operation == 3)
-				{
-					operation += pidTurnExact(0.0);
-				}
-				if(operation == 4)
-				{
-					pidTurnExact(0.0);
-					Timer.delay(0.3);
-					ClawOutput();
-					Timer.delay(0.5);
-					ClawStandby();
-					operation++;
-				}
-
+				middle_RightSwitch();
 				break;
 			case RIGHT:
 				//Start Right - RR
@@ -1252,44 +513,11 @@ public class Robot extends TimedRobot
 				{
 				case NONE:
 					//Drive past auto line
-					if(operation == 0)
-					{
-						operation += driveForward(5000, 0.0, true, backLeftDrive);
-					}
+					driveStraight();
 					break;
 				case one_scale:
 					// Drive up 1 Scale
-					if(operation == 0)
-					{
-						operation += driveForward(7500, 0.0, true, backLeftDrive);
-					}
-					if(operation == 1)
-					{
-						operation += pidTurnExact(-60.0);
-					}
-					if(operation == 2)
-					{
-						operation += elevatorPosition(35000);
-					}
-					if(operation == 3)
-					{
-						elevatorPosition(35000);
-						ClawRotateUp();
-						Timer.delay(0.075);
-						ClawStop();
-						Timer.delay(0.1);
-						ClawOutput();
-						Timer.delay(0.5);
-						ClawStandby();
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 4)
-					{
-						operation += elevatorPosition(1000);
-
-					}
+					right_RightScale();
 					break;
 				case one_switch:
 					//Drive up 1 Switch
@@ -1307,180 +535,26 @@ public class Robot extends TimedRobot
 					}
 					if(operation == 3)
 					{
-						Timer.delay(0.3);
+						waitFor(300);
 						ClawShoot();
-						Timer.delay(0.5);
+						waitFor(500);
 						ClawStandby();
 					}
 					break;
 				case one_switch_one_scale:
 					//Drive up 1 Scale and 1 Switch
-					if(operation == 0)
-					{
-						operation += driveForward(6900, 0.0, true, backLeftDrive);
-					}
-					if(operation == 1)
-					{
-						operation += pidTurnExact(-60.0);
-					}
-					if(operation == 2)
-					{
-						operation += elevatorPosition(35000);
-					}
-					if(operation == 3)
-					{
-						elevatorPosition(35000);
-						ClawRotateUp();
-						Timer.delay(0.075);
-						ClawStop();
-						Timer.delay(0.1);
-						ClawOutput();
-						Timer.delay(0.5);
-						ClawStandby();
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 4)
-					{
-						operation += elevatorPosition(1000);
-
-					}
-					if(operation == 5)
-					{
-						elevatorPosition(1000);
-						operation += pidTurnExact(-150);
-					}
-					if(operation == 6)
-					{
-						elevatorPosition(1000);
-						ClawRotateUp();
-						Timer.delay(0.5);
-						ClawStop();
-						ClawOpen();
-						ClawIntake();
-						operation++;
-					}
-					if(operation == 7)
-					{
-						elevatorPosition(1000);
-						operation += driveForward(2100, -150.0, false, backLeftDrive);
-					}
-					if(operation == 8)
-					{
-						elevatorPosition(1000);
-						ClawClose();
-						Timer.delay(1.0);
-						ClawStandby();
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 9)
-					{
-						operation += elevatorPosition(30000);
-					}
-					if(operation == 10)
-					{
-						elevatorPosition(1000);
-						operation += driveForward(1000, -150.0, false, backLeftDrive);
-					}
-					if(operation == 11)
-					{
-						ClawOpen();
-					}
+					right_RightScaleRightSwitch();
 					break;
 				case two_scale:
 					//Drive up 2 Scale
-					if(operation == 0)
-					{
-						operation += driveForward(7500, 0.0, true, backLeftDrive);
-					}
-					if(operation == 1)
-					{
-						operation += pidTurnExact(-60.0);
-					}
-					if(operation == 2)
-					{
-						operation += elevatorPosition(35000);
-					}
-					if(operation == 3)
-					{
-						ClawRotateUp();
-						Timer.delay(0.075);
-						ClawStop();
-						Timer.delay(0.1);
-						ClawOutput();
-						Timer.delay(0.5);
-						ClawStandby();
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 4)
-					{
-						operation += elevatorPosition(1000);
-
-					}
-					if(operation == 5)
-					{
-						operation += pidTurnExact(-150);
-					}
-					if(operation == 6)
-					{
-						ClawRotateUp();
-						Timer.delay(0.5);
-						ClawStop();
-						ClawOpen();
-						ClawIntake();
-						operation++;
-					}
-					if(operation == 7)
-					{
-						operation += driveForward(2100, -150.0, false, backLeftDrive);
-					}
-					if(operation == 8)
-					{
-						ClawClose();
-						Timer.delay(0.3);
-						ClawStandby();
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 9)
-					{
-						operation += pidTurnExact(30);
-					}
-					if(operation == 10)
-					{
-						operation += driveForward(2000, 30, false, backLeftDrive);
-					}
-					if(operation == 11)
-					{
-						operation += pidTurnExact(0.0);
-					}
-					if(operation == 12)
-					{
-						operation += elevatorPosition(52000);
-					}
-					if(operation == 13)
-					{
-						operation += driveForward(300, 0.0, true, backLeftDrive);
-					}
-					if(operation == 14)
-					{
-						ClawOutput();
-						Timer.delay(0.5);
-						ClawStandby();
-					}
+					right_TwoRightScale();
 					break;
 				default:
 					break;
 				}
 
 				break;
-				
+
 			default:
 				break;
 			}
@@ -1495,58 +569,11 @@ public class Robot extends TimedRobot
 				{
 				case NONE:
 					//Drive past auto line
-					if(operation == 0)
-					{
-						operation += driveForward(5000, 0.0, true, backLeftDrive);
-					}
+					driveStraight();
 					break;
 				case one_scale:
 					//Cross field scale
-					if(operation == 0)
-					{
-						operation += driveForward(6100, 0.0, true, backLeftDrive);
-					}
-					if(operation == 1)
-					{
-						operation += driveRight(7700, 0.0, backLeftDrive);
-					}
-					if(operation == 2)
-					{
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 3)
-					{
-						operation += driveForward(1500, 0.0, true, backLeftDrive);
-					}
-					if(operation == 4)
-					{
-						operation += pidTurnExact(-60.0);
-					}
-					if(operation == 5)
-					{
-						operation += elevatorPosition(35000);
-					}
-					if(operation == 6)
-					{
-						elevatorPosition(35000);
-						ClawRotateUp();
-						Timer.delay(0.075);
-						ClawStop();
-						Timer.delay(0.1);
-						ClawShoot();
-						Timer.delay(0.5);
-						ClawStandby();
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 7)
-					{
-						operation += elevatorPosition(1000);
-
-					}
+					left_RightScale();
 					break;
 				case one_switch:
 					//Drive up 1 Switch
@@ -1564,147 +591,24 @@ public class Robot extends TimedRobot
 					}
 					if(operation == 3)
 					{
-						Timer.delay(0.5);
+						waitFor(500);
 						ClawShoot();
-						Timer.delay(0.5);
+						waitFor(500);
 						ClawStandby();
 					}
 					break;
 				case two_scale:
 					//Cross field 2 Scale
-					if(operation == 0)
-					{
-						operation += driveForward(6200, 0.0, true, backLeftDrive);
-					}
-					if(operation == 1)
-					{
-						operation += driveRight(7700, 0.0, backLeftDrive);
-					}
-					if(operation == 2)
-					{
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 3)
-					{
-						operation += driveForward(1500, 0.0, true, backLeftDrive);
-					}
-					if(operation == 4)
-					{
-						operation += pidTurnExact(-60.0);
-					}
-					if(operation == 5)
-					{
-						operation += elevatorPosition(35000);
-					}
-					if(operation == 6)
-					{
-						ClawRotateUp();
-						Timer.delay(0.075);
-						ClawStop();
-						Timer.delay(0.1);
-						ClawShoot();
-						Timer.delay(0.5);
-						ClawStandby();
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 7)
-					{
-						operation += elevatorPosition(1000);
-					}
-					if(operation == 8)
-					{
-						operation += pidTurnExact(-150);
-					}
-					if(operation == 9)
-					{
-						ClawRotateUp();
-						Timer.delay(0.5);
-						ClawStop();
-						ClawOpen();
-						ClawIntake();
-						operation++;
-					}
-					if(operation == 10)
-					{
-						operation += driveForward(2100, -150.0, false, backLeftDrive);
-					}
-					if(operation == 11)
-					{
-						ClawClose();
-						Timer.delay(0.3);
-						ClawStandby();
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 12)
-					{
-						operation += pidTurnExact(30);
-					}
-					if(operation == 13)
-					{
-						operation += driveForward(2000, 30, false, backLeftDrive);
-					}
-					if(operation == 14)
-					{
-						operation += pidTurnExact(0.0);
-					}
-					if(operation == 15)
-					{
-						operation += elevatorPosition(52000);
-					}
-					if(operation == 16)
-					{
-						operation += driveForward(300, 0.0, true, backLeftDrive);
-					}
-					if(operation == 17)
-					{
-						ClawOutput();
-						Timer.delay(0.5);
-						ClawStandby();
-					}
+					left_TwoRightScale();
 					break;
 				default:
 					break;
-				
 				}
 
 				break;
 			case MIDDLE:
 				//Starting Middle - Left Switch
-				if(operation == 0)
-				{
-					operation += driveForward(1500, 0.0, true, backLeftDrive);
-				}
-				if(operation == 1)
-				{
-					operation++;
-				}
-				if(operation == 2)
-				{
-					operation += driveLeft(1800, 0.0, backRightDrive);
-				}
-				if(operation == 3)
-				{
-					operation += driveForward(1900, 0.0, true, backRightDrive);
-				}
-				if(operation == 4)
-				{
-					operation += pidTurnExact(0.0);
-				}
-				if(operation == 5)
-				{
-					pidTurnExact(0.0);
-					Timer.delay(0.3);
-					ClawOutput();
-					Timer.delay(0.5);
-					ClawStandby();
-					operation++;
-				}
+				middle_LeftSwitch();
 
 				break;
 			case RIGHT:
@@ -1713,135 +617,25 @@ public class Robot extends TimedRobot
 				{
 				case NONE:
 					//Drive past auto line
+					driveStraight();
 					break;
 				case one_scale:
 					//Drive up 1 Scale
-					if(operation == 0)
-					{
-						operation += driveForward(7500, 0.0, true, backLeftDrive);
-					}
-					if(operation == 1)
-					{
-						operation += pidTurnExact(-60.0);
-					}
-					if(operation == 2)
-					{
-						operation += elevatorPosition(35000);
-					}
-					if(operation == 3)
-					{
-						elevatorPosition(35000);
-						ClawRotateUp();
-						Timer.delay(0.075);
-						ClawStop();
-						Timer.delay(0.1);
-						ClawOutput();
-						Timer.delay(0.5);
-						ClawStandby();
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 4)
-					{
-						operation += elevatorPosition(1000);
-
-					}
+					right_RightScale();
 					break;
 				case one_switch:
 					//Cross field 1 Switch
 					break;
 				case two_scale:
 					//Drive up 2 Scale
-					if(operation == 0)
-					{
-						operation += driveForward(6900, 0.0, true, backLeftDrive);
-					}
-					if(operation == 1)
-					{
-						operation += pidTurnExact(-60.0);
-					}
-					if(operation == 2)
-					{
-						operation += elevatorPosition(35000);
-					}
-					if(operation == 3)
-					{
-						ClawRotateUp();
-						Timer.delay(0.075);
-						ClawStop();
-						Timer.delay(0.1);
-						ClawOutput();
-						Timer.delay(0.5);
-						ClawStandby();
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 4)
-					{
-						operation += elevatorPosition(1000);
-
-					}
-					if(operation == 5)
-					{
-						operation += pidTurnExact(-150);
-					}
-					if(operation == 6)
-					{
-						ClawRotateUp();
-						Timer.delay(0.5);
-						ClawStop();
-						ClawOpen();
-						ClawIntake();
-						operation++;
-					}
-					if(operation == 7)
-					{
-						operation += driveForward(2100, -150.0, false, backLeftDrive);
-					}
-					if(operation == 8)
-					{
-						ClawClose();
-						Timer.delay(0.3);
-						ClawStandby();
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 9)
-					{
-						operation += pidTurnExact(30);
-					}
-					if(operation == 10)
-					{
-						operation += driveForward(2000, 30, false, backLeftDrive);
-					}
-					if(operation == 11)
-					{
-						operation += pidTurnExact(0.0);
-					}
-					if(operation == 12)
-					{
-						operation += elevatorPosition(52000);
-					}
-					if(operation == 13)
-					{
-						operation += driveForward(300, 0.0, true, backLeftDrive);
-					}
-					if(operation == 14)
-					{
-						ClawOutput();
-						Timer.delay(0.5);
-						ClawStandby();
-					}
+					right_TwoRightScale();
 					break;
 				default:
 					break;
-				
+
 				}
 				break;
-				
+
 			default:
 				break;
 			}
@@ -1856,135 +650,20 @@ public class Robot extends TimedRobot
 				{
 				case NONE:
 					//Drive straight past auto line
-					if(operation == 0)
-					{
-						operation += driveForward(5000, 0.0, true, backLeftDrive);
-					}
+					driveStraight();
 					break;
 				case one_scale:
 					//Drive up 1 Scale
-					if(operation == 0)
-					{
-						operation += driveForward(7500, 0.0, true, backLeftDrive);
-					}
-					if(operation == 1)
-					{
-						operation += pidTurnExact(60.0);
-					}
-					if(operation == 2)
-					{
-						operation += elevatorPosition(35000);
-					}
-					if(operation == 3)
-					{
-						elevatorPosition(35000);
-						ClawRotateUp();
-						Timer.delay(0.075);
-						ClawStop();
-						Timer.delay(0.1);
-						ClawOutput();
-						Timer.delay(0.5);
-						ClawStandby();
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 4)
-					{
-						operation += elevatorPosition(1000);
-
-					}
+					left_LeftScale();
 					break;
 				case one_switch:
 					//Cross field 1 Switch
 					break;
 				case two_scale:
 					//Drive up 2 Scale
-					if(operation == 0)
-					{
-						operation += driveForward(7000, 0.0, true, backLeftDrive);
-					}
-					if(operation == 1)
-					{
-						operation += pidTurnExact(60.0);
-					}
-					if(operation == 2)
-					{
-						operation += elevatorPosition(35000);
-					}
-					if(operation == 3)
-					{
-						ClawRotateUp();
-						Timer.delay(0.075);
-						ClawStop();
-						Timer.delay(0.1);
-						ClawOutput();
-						Timer.delay(0.3);
-						ClawStandby();
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 4)
-					{
-						operation += elevatorPosition(1000);
-
-					}
-					if(operation == 5)
-					{
-						operation += pidTurnExact(150);
-					}
-					if(operation == 6)
-					{
-						ClawRotateUp();
-						Timer.delay(0.5);
-						ClawStop();
-						ClawOpen();
-						ClawIntake();
-						operation++;
-					}
-					if(operation == 7)
-					{
-						operation += driveForward(2400, 150.0, false, backLeftDrive);
-					}
-					if(operation == 8)
-					{
-						ClawClose();
-						Timer.delay(0.3);
-						ClawStandby();
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 9)
-					{
-						operation += pidTurnExact(-30);
-					}
-					if(operation == 10)
-					{
-						operation += driveForward(2000, -30, false, backLeftDrive);
-					}
-					if(operation == 11)
-					{
-						operation += pidTurnExact(0.0);
-					}
-					if(operation == 12)
-					{
-						operation += elevatorPosition(52000);
-					}
-					if(operation == 13)
-					{
-						driveForward(300, 0.0, true, backLeftDrive);
-					}
-					if(operation == 14)
-					{
-						ClawOutput();
-						Timer.delay(0.5);
-						ClawStandby();
-						operation++;
-					}
+					left_TwoLeftScale();
 					break;
-					
+
 				default:
 					break;
 				}
@@ -1992,31 +671,7 @@ public class Robot extends TimedRobot
 				break;
 			case MIDDLE:
 				//Starting Middle - Right Switch
-				if(operation == 0)
-				{
-					operation += driveForward(1500, 0.0, true, backLeftDrive);
-				}
-				if(operation == 1)
-				{
-					operation += driveRight(2200, 0.0, backRightDrive);
-				}
-				if(operation == 2)
-				{
-					operation += driveForward(2200, 0.0, true, backLeftDrive);
-				}
-				if(operation == 3)
-				{
-					operation += pidTurnExact(0.0);
-				}
-				if(operation == 4)
-				{
-					pidTurnExact(0.0);
-					Timer.delay(0.3);
-					ClawOutput();
-					Timer.delay(0.5);
-					ClawStandby();
-					operation++;
-				} 
+				middle_RightSwitch();
 
 				break;
 			case RIGHT:
@@ -2025,63 +680,11 @@ public class Robot extends TimedRobot
 				{
 				case NONE:
 					//Drive past auto line
-					if(operation == 0)
-					{
-						operation += driveForward(3000, 0.0, true, backLeftDrive);
-					}
+					driveStraight();
 					break;
 				case one_scale:
 					//Cross field 1 Scale
-					if(operation == 0)
-					{
-						operation += driveForward(6100, 0.0, true, frontRightDrive);
-					}
-					if(operation == 1)
-					{
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 2)
-					{
-						operation += driveLeft(7700, 0.0, backLeftDrive);
-					}
-					if(operation == 3)
-					{
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 4)
-					{
-						operation += driveForward(2500, 0.0, true, frontRightDrive);
-					}
-					if(operation == 5)
-					{
-						operation += pidTurnExact(60.0);
-					}
-					if(operation == 6)
-					{
-						operation += elevatorPosition(35000);
-					}
-					if(operation == 7)
-					{
-						elevatorPosition(35000);
-						ClawRotateUp();
-						Timer.delay(0.075);
-						ClawStop();
-						Timer.delay(0.1);
-						ClawOutput();
-						Timer.delay(0.5);
-						ClawStandby();
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 8)
-					{
-						operation += elevatorPosition(1000);
-					}
+					right_LeftScale();
 					break;
 				case one_switch:
 					//Drive up 1 Switch
@@ -2099,142 +702,35 @@ public class Robot extends TimedRobot
 					}
 					if(operation == 3)
 					{
-						Timer.delay(0.3);
+						waitFor(300);
 						ClawShoot();
-						Timer.delay(0.5);
+						waitFor(500);
 						ClawStandby();
 					}
 					break;
 				case two_scale:
 					//Cross field 2 Scale
-					if(operation == 0)
-					{
-						operation += driveForward(6100, 0.0, true, frontRightDrive);
-					}
-					if(operation == 1)
-					{
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 2)
-					{
-						operation += driveLeft(7700, 0.0, backLeftDrive);
-					}
-					if(operation == 3)
-					{
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 4)
-					{
-						operation += driveForward(2000, 0.0, true, frontRightDrive);
-					}
-					if(operation == 5)
-					{
-						operation += pidTurnExact(60.0);
-					}
-					if(operation == 6)
-					{
-						operation += elevatorPosition(35000);
-					}
-					if(operation == 7)
-					{
-						ClawRotateUp();
-						Timer.delay(0.075);
-						ClawStop();
-						Timer.delay(0.1);
-						ClawOutput();
-						Timer.delay(0.5);
-						ClawStandby();
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 8)
-					{
-						operation += elevatorPosition(1000);
-					}
-					if(operation == 9)
-					{
-						operation += pidTurnExact(150);
-					}
-					if(operation == 10)
-					{
-						ClawRotateUp();
-						Timer.delay(0.5);
-						ClawStop();
-						ClawOpen();
-						ClawIntake();
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 11)
-					{
-						operation += driveForward(2100, 150.0, false, frontRightDrive);
-					}
-					if(operation == 12)
-					{
-						ClawClose();
-						Timer.delay(0.3);
-						ClawStandby();
-						resetWheelEncoders();
-						Timer.delay(0.3);
-						operation++;
-					}
-					if(operation == 13)
-					{
-						operation += pidTurnExact(-30);
-					}
-					if(operation == 14)
-					{
-						operation += driveForward(1900, -30, false, backLeftDrive);
-					}
-					if(operation == 15)
-					{
-						operation += pidTurnExact(0.0);
-					}
-					if(operation == 16)
-					{
-						operation += elevatorPosition(52000);
-					}
-					if(operation == 17)
-					{
-						operation += driveForward(300, 0.0, true, backLeftDrive);
-					}
-					if(operation == 18)
-					{
-						ClawOutput();
-						Timer.delay(0.3);
-						ClawStandby();
-						operation++;
-					}
+					right_TwoLeftScale();
 					break;
-					
+
 				default:
 					break;
 				}
-
 			}
 		}
-		
+
 		//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 		//END OF AUTONOMOUS
 
 		//stop taking air when pneumatics reaches 120 psi
-		/*
 		if (pressureSwitch) 
 		{
 			air.setClosedLoopControl(false);
 		}
 		showDisplay();
-		 /*
-		 */
-		
+
 		drivetrain.stopMotor();
-		
+
 		showDisplay();
 	}
 
@@ -2278,11 +774,13 @@ public class Robot extends TimedRobot
 		getButtonA_Operator = operatorPad.getButton(LogitechDualAction.LogitechButton.A);
 		getButtonB_Operator = operatorPad.getButton(LogitechDualAction.LogitechButton.B);
 		getButtonLB = driverPad.getButton(LogitechDualAction.LogitechButton.LEFT_BUMPER);
-		boolean elevatorOverride = operatorPad.getButton(LogitechDualAction.LogitechButton.SELECT);
-		
+		elevatorOverride = operatorPad.getButton(LogitechDualAction.LogitechButton.SELECT);
+
+		//Resets the elevator's encoder in the event of an unwanted encoder reset
 		if (elevatorOverride) {
 			System.out.println("ELEVATOR OVERRIDE");
-		}
+			resetElevatorEncoder();
+		}	
 
 		//gets yaw from gyro continuously
 		angle = ahrs.getYaw();
@@ -2389,10 +887,6 @@ public class Robot extends TimedRobot
 			}
 			ClawClose();
 		}
-		
-		if (elevatorOverride) {
-			resetElevatorEncoder();
-		}
 
 		//Move the elevator up or down
 		if (leftStickY_Operator > 0.25 && (elevatorOverride || getTicks(rightElevator) < -3000))
@@ -2414,9 +908,9 @@ public class Robot extends TimedRobot
 		if (getButtonY_Operator) {
 			EController.enable();
 			elevatorPosition(52000);
-			leftStickX *= 0.5;
-			leftStickY *= 0.5;
-			currentRotationRate *= 0.5;
+			leftStickX *= 0.85;
+			leftStickY *= 0.85;
+			currentRotationRate *= 0.85;
 		}
 		else if (getButtonX_Operator) {
 			EController.enable();
@@ -2440,16 +934,7 @@ public class Robot extends TimedRobot
 		}
 
 		//Right stick on operator controller raises/lowers claw based on input - otherwise it holds
-		if(rightStickY_Operator > 0.25)
-		{
-			ClawRotateUp();
-		}else if(rightStickY_Operator < -0.25) 
-		{
-			ClawRotateDown();
-		}else
-		{
-			ClawStop();
-		}
+		ClawRotate(rightStickY_Operator);
 
 		//Stop taking air when pneumatics reaches 120 psi
 		if (pressureSwitch == true) 
@@ -2457,9 +942,9 @@ public class Robot extends TimedRobot
 			air.setClosedLoopControl(false);
 		}
 		//Calls upon the mecanumDrive_Cartesian method that sends specific power to the talons
-		drivetrain.driveCartesian (leftStickX, leftStickY, currentRotationRate * 0.75, -angle);
+		drivetrain.driveCartesian (leftStickX, leftStickY, currentRotationRate, -angle);
 	}
-	
+
 	@Override
 	public void disabledInit() {
 		drivetrain.setSafetyEnabled(true);
@@ -2555,14 +1040,14 @@ public class Robot extends TimedRobot
 		claw.set(DoubleSolenoid.Value.kForward);
 	}
 	//Elevator Up
-	private void ElevatorUp()
+	private void ElevatorUp(double leftStickY_Operator)
 	{
-		leftElevator.set(1);
-		leftElevatorSlave.set(1);
-		rightElevator.set(1);
+		leftElevator.set(1.0);
+		leftElevatorSlave.set(1.0);
+		rightElevator.set(1.0);
 	}
 	//Elevator Down
-	private void ElevatorDown()
+	private void ElevatorDown(double leftStickY_Operator)
 	{
 		leftElevator.set(-1.0);
 		leftElevatorSlave.set(-1.0);
@@ -2576,7 +1061,7 @@ public class Robot extends TimedRobot
 		rightElevator.set(0.0);
 	}
 	//Claw Rotate Up
-	private void ClawRotateUp()
+	private void ClawRotateUp(double rightStickY_Operator)
 	{
 		pivot.set(-0.8);
 	}
@@ -2593,33 +1078,44 @@ public class Robot extends TimedRobot
 		pivot.set(0.0);
 	}
 
+	private void ClawRotate(double rightStickY_Operator)
+	{
+		pivot.set(rightStickY_Operator);
+	}
+
+	private int waitFor(int millis)
+	{
+		long now = System.currentTimeMillis();
+		if(isWaiting && (now >= waitStartTime + millis))
+		{
+			waitStartTime = -1;
+			isWaiting = false;
+			return 1;
+		}
+		if(isWaiting)
+		{
+			return 0;
+		}
+		isWaiting = true;
+		waitStartTime = now;
+	}
+
 	private int pidTurnExact(double angle)
 	{
-		resetWheelEncoders();
-		
 		turnController.setSetpoint(angle);
 		turnController.enable();
 
-//		if(ahrs.getYaw() >= angle - kToleranceDegrees && ahrs.getYaw() <= angle + kToleranceDegrees)
-//		{
-//			resetWheelEncoders();
-//			Timer.delay(0.4);
-//			return 1;
-//		}else
-//		{
-//			drivetrain.driveCartesian(0.0, 0.0, rotate * 0.75, currentAngle);
-//			return 0;
-//		}
-		while (isEnabled() && isAutonomous() &&
-				!(ahrs.getYaw() >= angle - kToleranceDegrees && ahrs.getYaw() <= angle + kToleranceDegrees)) {
-			double currentAngle = ahrs.getYaw();
+		double currentAngle = ahrs.getYaw();
+		if(ahrs.getYaw() >= angle - kToleranceDegrees && ahrs.getYaw() <= angle + kToleranceDegrees)
+		{
 			drivetrain.driveCartesian(0.0, 0.0, rotate * 0.75, currentAngle);
-			Timer.delay(AUTO_PID_LOOP_PERIOD);
+			return 0;
+		}else
+		{
+			waitFor(AUTO_PID_LOOP_PERIOD);
+			return 1;
 		}
-		resetWheelEncoders();
-		drivetrain.stopMotor();
-		turnController.disable();
-		return isAutonomous() && isEnabled() ? 1 : 0;
+
 	}
 
 	//Getting elevator to desired height
@@ -2627,23 +1123,22 @@ public class Robot extends TimedRobot
 	{
 		EController.setSetpoint(-position);
 		EController.enable();
-		rightElevator.set(ESpeed);
-		leftElevator.set(ESpeed);
-		leftElevatorSlave.set(ESpeed);
 
 		if(getTicks(rightElevator) >= -position - 4000 && getTicks(rightElevator) <= -position + 4000)
 		{
-			EController.disable();
+			waitFor(AUTO_PID_LOOP_PERIOD);
 			return 1;
 		}else
 		{
+			rightElevator.set(ESpeed);
+			leftElevator.set(ESpeed);
+			leftElevatorSlave.set(ESpeed);
 			return 0;
 		}
 	}
 
 	private int driveForward(double ticks, double driveAngle, boolean fieldCentric, WPI_TalonSRX talon)
 	{
-		resetWheelEncoders();
 		//FRONT LEFT
 		FLController.setSetpoint(ticks);
 		FLController.enable();
@@ -2660,47 +1155,23 @@ public class Robot extends TimedRobot
 		BRController.setSetpoint(-ticks);
 		BRController.enable();
 
-		while (isEnabled() && isAutonomous() &&
-				!(Math.abs(getTicks(talon)) >= ticks - tolerance && Math.abs(getTicks(talon)) <= ticks + tolerance)) {
-			YSpeed = (FLSpeed + BLSpeed + FRSpeed + BRSpeed / 4);
-//			Getting current angle and speed to use in driveCartesian()
-			angle = ahrs.getYaw();
+		//Getting current angle and speed to use in driveCartesian()
+		angle = ahrs.getYaw();
+		YSpeed = (FLSpeed + BLSpeed + FRSpeed + BRSpeed / 4);
+		if(Math.abs(getTicks(talon)) >= ticks - tolerance && Math.abs(getTicks(talon)) <= ticks + tolerance)
+		{
 			drivetrain.driveCartesian(-0.05, YSpeed, gyroPID(driveAngle), fieldCentric ? -angle : 0);
-			showDisplay();
-			Timer.delay(AUTO_PID_LOOP_PERIOD);
+			return 0;
+		}else
+		{
+			waitFor(AUTO_PID_LOOP_PERIOD);
+			return 1;
 		}
-		resetWheelEncoders();
-		drivetrain.stopMotor();
-		FLController.disable();
-		FRController.disable();
-		BLController.disable();
-		BRController.disable();
-		return isAutonomous() && isEnabled() ? 1 : 0;
-//		if(atTarget)
-//		{
-//			resetWheelEncoders();
-//			Timer.delay(0.3);
-//			return 1;
-//		}else
-//		{
-//			//Toggling if field-centric drive is necessary
-//			if(fieldCentric)
-//			{
-//				drivetrain.driveCartesian(0.0, YSpeed, gyroPID(driveAngle), -angle);
-//				return 0;
-//			}else
-//			{
-//				drivetrain.driveCartesian(-0.076, YSpeed, gyroPID(driveAngle));
-//				return 0;
-//			}
-//
-//		}
 	}
 
 	//Driving left using encoders
 	private int driveRight(double ticks, double driveAngle, WPI_TalonSRX talon)
 	{
-		resetWheelEncoders();
 		//FRONT LEFT
 		FLController.setSetpoint(ticks);
 		FLController.enable();
@@ -2717,27 +1188,23 @@ public class Robot extends TimedRobot
 		BRController.setSetpoint(-ticks);
 		BRController.enable();
 
-		while (isEnabled() && isAutonomous() &&
-				!(Math.abs(getTicks(talon)) >= ticks - tolerance && Math.abs(getTicks(talon)) <= ticks + tolerance)) {
-			XSpeed = (FLSpeed + BLSpeed + FRSpeed + BRSpeed / 4);
-			angle = ahrs.getYaw();
+		//Getting current angle and speed to use in driveCartesian()
+		XSpeed = (FLSpeed + BLSpeed + FRSpeed + BRSpeed / 4);
+		angle = ahrs.getYaw();
+		if(Math.abs(getTicks(talon)) >= ticks - tolerance && Math.abs(getTicks(talon)) <= ticks + tolerance)
+		{
 			drivetrain.driveCartesian(XSpeed, 0.0, gyroPID(driveAngle), -angle);
-			showDisplay();
-			Timer.delay(AUTO_PID_LOOP_PERIOD);
-		}
-		resetWheelEncoders();
-		drivetrain.stopMotor();
-		FLController.disable();
-		FRController.disable();
-		BLController.disable();
-		BRController.disable();
-		return isAutonomous() && isEnabled() ? 1 : 0;
+			return 0;
+		}else
+		{
+			waitFor(AUTO_PID_LOOP_PERIOD);
+			return 1;
+		}			
 	}
 
 	//Driving right using encoders
 	private int driveLeft(double ticks, double driveAngle, WPI_TalonSRX talon)
 	{
-		resetWheelEncoders();
 		//FRONT LEFT
 		FLController.setSetpoint(-ticks);
 		FLController.enable();
@@ -2754,21 +1221,18 @@ public class Robot extends TimedRobot
 		BRController.setSetpoint(ticks);
 		BRController.enable();
 
-		while (isEnabled() && isAutonomous() &&
-				!(Math.abs(getTicks(talon)) >= ticks - tolerance && Math.abs(getTicks(talon)) <= ticks + tolerance)) {
-			XSpeed = (FLSpeed + BLSpeed + FRSpeed + BRSpeed / 4);
-			angle = ahrs.getYaw();
+		//Getting current angle and speed to use in driveCartesian()
+		XSpeed = (FLSpeed + BLSpeed + FRSpeed + BRSpeed / 4);
+		angle = ahrs.getYaw();
+		if(Math.abs(getTicks(talon)) >= ticks - tolerance && Math.abs(getTicks(talon)) <= ticks + tolerance)
+		{
 			drivetrain.driveCartesian(XSpeed, 0.0, gyroPID(driveAngle), -angle);
-			showDisplay();
-			Timer.delay(AUTO_PID_LOOP_PERIOD);
-		}
-		resetWheelEncoders();
-		drivetrain.stopMotor();
-		FLController.disable();
-		FRController.disable();
-		BLController.disable();
-		BRController.disable();
-		return isAutonomous() && isEnabled() ? 1 : 0;
+			return 0;
+		}else
+		{
+			waitFor(AUTO_PID_LOOP_PERIOD);
+			return 1;
+		}		
 	}
 
 	//Driving backward using encoders
@@ -2791,21 +1255,18 @@ public class Robot extends TimedRobot
 		BRController.setSetpoint(ticks);
 		BRController.enable();
 
-		while (isEnabled() && isAutonomous() &&
-				!(Math.abs(getTicks(talon)) >= ticks - tolerance && Math.abs(getTicks(talon)) <= ticks + tolerance)) {
-			YSpeed = (FLSpeed + BLSpeed + FRSpeed + BRSpeed / 4);
-			angle = ahrs.getYaw();
+		//Getting current angle and speed to use in driveCartesian()
+		YSpeed = (FLSpeed + BLSpeed + FRSpeed + BRSpeed / 4);
+		angle = ahrs.getYaw();
+		if(Math.abs(getTicks(talon)) >= ticks - tolerance && Math.abs(getTicks(talon)) <= ticks + toleranc)
+		{
 			drivetrain.driveCartesian(0, YSpeed, gyroPID(driveAngle), -angle);
-			showDisplay();
-			Timer.delay(AUTO_PID_LOOP_PERIOD);
+			return 0;
+		}else
+		{
+			waitFor(AUTO_PID_LOOP_PERIOD);
+			return 1;
 		}
-		resetWheelEncoders();
-		drivetrain.stopMotor();
-		FLController.disable();
-		FRController.disable();
-		BLController.disable();
-		BRController.disable();
-		return isAutonomous() && isEnabled() ? 1 : 0;
 	}
 
 	//Preset commands that executes the final climb
@@ -2869,5 +1330,977 @@ public class Robot extends TimedRobot
 		SmartDashboard.putNumber("Elevator Height", rightElevator.getSelectedSensorPosition(0));
 		SmartDashboard.putNumber("Operation", operation);
 		SmartDashboard.putNumber("ESPEED:", ESpeed);
+	}
+
+	//Just drive past auto line
+	private void driveStraight()
+	{
+		if(operation == 0)
+		{
+			operation += driveForward(5000, 0.0, true, backLeftDrive);
+		}
+	}
+
+	//Start Middle, score left switch
+	private void middle_LeftSwitch() 
+	{
+		if(operation == 0)
+		{
+			operation += driveForward(1500, 0.0, true, backLeftDrive);
+		}
+		if(operation == 1)
+		{
+			operation++;
+		}
+		if(operation == 2)
+		{
+			operation += driveLeft(1800, 0.0, backRightDrive);
+		}
+		if(operation == 3)
+		{
+			operation += driveForward(1900, 0.0, true, backRightDrive);
+		}
+		if(operation == 4)
+		{
+			operation += pidTurnExact(0.0);
+		}
+		if(operation == 5)
+		{
+			pidTurnExact(0.0);
+			waitFor(300);
+			ClawOutput();
+			waitFor(500);
+			ClawStandby();
+			operation++;
+		}
+
+	}
+
+	//Start Middle, score right switch
+	private void middle_RightSwitch()
+	{
+		if(operation == 0)
+		{
+			operation += driveForward(1500, 0.0, true, backLeftDrive);
+		}
+		if(operation == 1)
+		{
+			operation += driveRight(2200, 0.0, backRightDrive);
+		}
+		if(operation == 2)
+		{
+			operation += driveForward(2200, 0.0, true, backLeftDrive);
+		}
+		if(operation == 3)
+		{
+			operation += pidTurnExact(0.0);
+		}
+		if(operation == 4)
+		{
+			pidTurnExact(0.0);
+			waitFor(300);
+			ClawOutput();
+			waitFor(500);
+			ClawStandby();
+			operation++;
+		}
+
+	}
+
+	//Start Left, left scale
+	private void left_LeftScale()
+	{
+		if(operation == 0)
+		{
+			operation += driveForward(7500, 0.0, true, backLeftDrive);
+		}
+		if(operation == 1)
+		{
+			operation += pidTurnExact(60.0);
+		}
+		if(operation == 2)
+		{
+			operation += elevatorPosition(35000);
+		}
+		if(operation == 3)
+		{
+			elevatorPosition(35000);
+			ClawRotateUp();
+			waitFor(75);
+			ClawStop();
+			waitFor(100);
+			ClawOutput();
+			waitFor(500);
+			ClawStandby();
+			resetWheelEncoders();
+			waitFor(300);
+			operation++;
+		}
+		if(operation == 4)
+		{
+			operation += elevatorPosition(1000);
+
+		}
+	}
+
+	private void left_RightScaleRightSwitch()
+	{
+		if(operation == 0)
+		{
+			operation += driveForward(6100, 0.0, true, backLeftDrive);
+		}
+		if(operation == 1)
+		{
+			operation += driveRight(7700, 0.0, backLeftDrive);
+		}
+		if(operation == 2)
+		{
+			resetWheelEncoders();
+			waitFor(300);
+			operation++;
+		}
+		if(operation == 3)
+		{
+			operation += driveForward(1000, 0.0, true, backLeftDrive);
+		}
+		if(operation == 4)
+		{
+			operation += pidTurnExact(-60.0);
+		}
+		if(operation == 5)
+		{
+			operation += elevatorPosition(35000);
+		}
+		if(operation == 6)
+		{
+			elevatorPosition(35000);
+			ClawRotateUp();
+			waitFor(75);
+			ClawStop();
+			waitFor(100);
+			ClawShoot();
+			waitFor(500);
+			ClawStandby();
+			resetWheelEncoders();
+			waitFor(300);
+			operation++;
+		}
+		if(operation == 7)
+		{
+			operation += elevatorPosition(1000);
+
+		}
+		if(operation == 8)
+		{
+			elevatorPosition(1000);
+			operation += pidTurnExact(-150);
+		}
+		if(operation == 9)
+		{
+			elevatorPosition(1000);
+			ClawRotateUp();
+			waitFor(500);
+			ClawStop();
+			ClawOpen();
+			ClawIntake();
+			resetWheelEncoders();
+			waitFor(300);
+			operation++;
+		}
+		if(operation == 10)
+		{
+			elevatorPosition(1000);
+			operation += driveForward(2100, -150.0, false, backLeftDrive);
+		}
+		if(operation == 11)
+		{
+			elevatorPosition(1000);
+			ClawClose();
+			waitFor(1000);
+			ClawStandby();
+			resetWheelEncoders();
+			waitFor(300);
+			operation++;
+		}
+		if(operation == 12)
+		{
+			operation += elevatorPosition(30000);
+		}
+		if(operation == 13)
+		{
+			elevatorPosition(30000);
+			operation += driveForward(1000, -150.0, false, backLeftDrive);
+		}
+		if(operation == 14)
+		{
+			ClawOpen();
+		}
+	}
+
+	private void left_LeftScaleLeftSwitch()
+	{
+		if(operation == 0)
+		{
+			operation += driveForward(7000, 0.0, true, backLeftDrive);
+		}
+		if(operation == 1)
+		{
+			operation += pidTurnExact(60.0);
+		}
+		if(operation == 2)
+		{
+			operation += elevatorPosition(35000);
+		}
+		if(operation == 3)
+		{
+			elevatorPosition(35000);
+			ClawRotateUp();
+			waitFor(75);
+			ClawStop();
+			waitFor(100);
+			ClawOutput();
+			waitFor(500);
+			ClawStandby();
+			resetWheelEncoders();
+			waitFor(300);
+			operation++;
+		}
+		if(operation == 4)
+		{
+			operation += elevatorPosition(1000);
+
+		}
+		if(operation == 5)
+		{
+			elevatorPosition(1000);
+			operation += pidTurnExact(150);
+		}
+		if(operation == 6)
+		{
+			ClawRotateUp();
+			waitFor(500);
+			ClawStop();
+			ClawOpen();
+			ClawIntake();
+			operation++;
+		}
+		if(operation == 7)
+		{
+			elevatorPosition(1000);
+			operation += driveForward(2400, 150.0, false, backLeftDrive);
+		}
+		if(operation == 8)
+		{
+			elevatorPosition(1000);
+			ClawClose();
+			waitFor(1000);
+			ClawStandby();
+			resetWheelEncoders();
+			waitFor(300);
+			operation++;
+		}
+		if(operation == 9)
+		{
+			operation += elevatorPosition(30000);
+		}
+		if(operation == 10)
+		{
+			elevatorPosition(30000);
+			operation += driveForward(1000, 150, false, backLeftDrive);
+		}
+		if(operation == 11)
+		{
+			ClawOpen();
+		}
+	}
+
+	private void left_TwoLeftScale()
+	{
+		if(operation == 0)
+		{
+			operation += driveForward(7500, 0.0, true, backLeftDrive);
+		}
+		if(operation == 1)
+		{
+			operation += pidTurnExact(60.0);
+		}
+		if(operation == 2)
+		{
+			operation += elevatorPosition(35000);
+		}
+		if(operation == 3)
+		{
+			ClawRotateUp();
+			waitFor(75);
+			ClawStop();
+			waitFor(100);
+			ClawOutput();
+			waitFor(300);
+			ClawStandby();
+			resetWheelEncoders();
+			waitFor(300);
+			operation++;
+		}
+		if(operation == 4)
+		{
+			operation += elevatorPosition(1000);
+
+		}
+		if(operation == 5)
+		{
+			operation += pidTurnExact(150);
+		}
+		if(operation == 6)
+		{
+			ClawRotateUp();
+			waitFor(500);
+			ClawStop();
+			ClawOpen();
+			ClawIntake();
+			operation++;
+		}
+		if(operation == 7)
+		{
+			operation += driveForward(2400, 150.0, false, backLeftDrive);
+		}
+		if(operation == 8)
+		{
+			ClawClose();
+			waitFor(300);
+			ClawStandby();
+			resetWheelEncoders();
+			waitFor(300);
+			operation++;
+		}
+		if(operation == 9)
+		{
+			operation += pidTurnExact(-30);
+		}
+		if(operation == 10)
+		{
+			operation += driveForward(2000, -30, false, backLeftDrive);
+		}
+		if(operation == 11)
+		{
+			operation += pidTurnExact(0.0);
+		}
+		if(operation == 12)
+		{
+			operation += elevatorPosition(45000);
+		}
+		if(operation == 13)
+		{
+			driveForward(300, 0.0, true, backLeftDrive);
+		}
+		if(operation == 14)
+		{
+			ClawOutput();
+			waitFor(500);
+			ClawStandby();
+			operation++;
+		}
+	}
+
+	//Start Left, right scale
+	private void left_RightScale()
+	{
+		if(operation == 0)
+		{
+			operation += driveForward(6100, 0.0, true, backLeftDrive);
+		}
+		if(operation == 1)
+		{
+			operation += driveRight(7700, 0.0, backLeftDrive);
+		}
+		if(operation == 2)
+		{
+			resetWheelEncoders();
+			waitFor(300);
+			operation++;
+		}
+		if(operation == 3)
+		{
+			operation += driveForward(1500, 0.0, true, backLeftDrive);
+		}
+		if(operation == 4)
+		{
+			operation += pidTurnExact(-60.0);
+		}
+		if(operation == 5)
+		{
+			operation += elevatorPosition(35000);
+		}
+		if(operation == 6)
+		{
+			elevatorPosition(35000);
+			ClawRotateUp();
+			waitFor(75);
+			ClawStop();
+			waitFor(100);
+			ClawShoot();
+			waitFor(500);
+			ClawStandby();
+			resetWheelEncoders();
+			waitFor(300);
+			operation++;
+		}
+		if(operation == 7)
+		{
+			operation += elevatorPosition(2000);
+
+		}
+	}
+
+	//Start Left, Right Scale x2
+	private void left_TwoRightScale()
+	{
+		if(operation == 0)
+		{
+			operation += driveForward(6200, 0.0, true, backLeftDrive);
+		}
+		if(operation == 1)
+		{
+			operation += driveRight(7700, 0.0, backLeftDrive);
+		}
+		if(operation == 2)
+		{
+			resetWheelEncoders();
+			waitFor(300);
+			operation++;
+		}
+		if(operation == 3)
+		{
+			operation += driveForward(1500, 0.0, true, backLeftDrive);
+		}
+		if(operation == 4)
+		{
+			operation += pidTurnExact(-60.0);
+		}
+		if(operation == 5)
+		{
+			operation += elevatorPosition(35000);
+		}
+		if(operation == 6)
+		{
+			ClawRotateUp();
+			waitFor(75);
+			ClawStop();
+			waitFor(100);
+			ClawShoot();
+			waitFor(500);
+			ClawStandby();
+			resetWheelEncoders();
+			waitFor(300);
+			operation++;
+		}
+		if(operation == 7)
+		{
+			operation += elevatorPosition(1000);
+		}
+		if(operation == 8)
+		{
+			operation += pidTurnExact(-150);
+		}
+		if(operation == 9)
+		{
+			ClawRotateUp();
+			waitFor(500);
+			ClawStop();
+			ClawOpen();
+			ClawIntake();
+			operation++;
+		}
+		if(operation == 10)
+		{
+			operation += driveForward(2100, -150.0, false, backLeftDrive);
+		}
+		if(operation == 11)
+		{
+			ClawClose();
+			waitFor(300);
+			ClawStandby();
+			resetWheelEncoders();
+			waitFor(300);
+			operation++;
+		}
+		if(operation == 12)
+		{
+			operation += pidTurnExact(30);
+		}
+		if(operation == 13)
+		{
+			operation += driveForward(2000, 30, false, backLeftDrive);
+		}
+		if(operation == 14)
+		{
+			operation += pidTurnExact(0.0);
+		}
+		if(operation == 15)
+		{
+			operation += elevatorPosition(52000);
+		}
+		if(operation == 16)
+		{
+			operation += driveForward(300, 0.0, true, backLeftDrive);
+		}
+		if(operation == 17)
+		{
+			ClawOutput();
+			waitFor(500);
+			ClawStandby();
+		}
+	}
+
+	private void right_LeftScale()
+	{
+		if(operation == 0)
+		{
+			operation += driveForward(6000, 0.0, true, frontRightDrive);
+		}
+		if(operation == 1)
+		{
+			resetWheelEncoders();
+			waitFor(300);
+			operation++;
+		}
+		if(operation == 2)
+		{
+			operation += driveLeft(7700, 0.0, backLeftDrive);
+		}
+		if(operation == 3)
+		{
+			resetWheelEncoders();
+			waitFor(300);
+			operation++;
+		}
+		if(operation == 4)
+		{
+			operation += driveForward(2500, 0.0, true, frontRightDrive);
+		}
+		if(operation == 5)
+		{
+			operation += pidTurnExact(60.0);
+		}
+		if(operation == 6)
+		{
+			operation += elevatorPosition(35000);
+		}
+		if(operation == 7)
+		{
+			ClawRotateUp();
+			waitFor(75);
+			ClawStop();
+			waitFor(100);
+			ClawOutput();
+			waitFor(500);
+			ClawStandby();
+			resetWheelEncoders();
+			waitFor(300);
+			operation++;
+		}
+		if(operation == 8)
+		{
+			operation += elevatorPosition(1000);
+		}
+	}
+
+	private void right_TwoLeftScale()
+	{
+		if(operation == 0)
+		{
+			operation += driveForward(6100, 0.0, true, frontRightDrive);
+		}
+		if(operation == 1)
+		{
+			resetWheelEncoders();
+			waitFor(300);
+			operation++;
+		}
+		if(operation == 2)
+		{
+			operation += driveLeft(7700, 0.0, backLeftDrive);
+		}
+		if(operation == 3)
+		{
+			resetWheelEncoders();
+			waitFor(300);
+			operation++;
+		}
+		if(operation == 4)
+		{
+			operation += driveForward(2000, 0.0, true, frontRightDrive);
+		}
+		if(operation == 5)
+		{
+			operation += pidTurnExact(60.0);
+		}
+		if(operation == 6)
+		{
+			operation += elevatorPosition(35000);
+		}
+		if(operation == 7)
+		{
+			ClawRotateUp();
+			waitFor(75);
+			ClawStop();
+			waitFor(100);
+			ClawOutput();
+			waitFor(500);
+			ClawStandby();
+			resetWheelEncoders();
+			waitFor(300);
+			operation++;
+		}
+		if(operation == 8)
+		{
+			operation += elevatorPosition(1000);
+		}
+		if(operation == 9)
+		{
+			operation += pidTurnExact(150);
+		}
+		if(operation == 10)
+		{
+			ClawRotateUp();
+			waitFor(500);
+			ClawStop();
+			ClawOpen();
+			ClawIntake();
+			resetWheelEncoders();
+			waitFor(300);
+			operation++;
+		}
+		if(operation == 11)
+		{
+			operation += driveForward(2100, 150.0, false, frontRightDrive);
+		}
+		if(operation == 12)
+		{
+			ClawClose();
+			waitFor(300);
+			ClawStandby();
+			resetWheelEncoders();
+			waitFor(300);
+			operation++;
+		}
+		if(operation == 13)
+		{
+			operation += pidTurnExact(-30);
+		}
+		if(operation == 14)
+		{
+			operation += driveForward(1900, -30, false, backLeftDrive);
+		}
+		if(operation == 15)
+		{
+			operation += pidTurnExact(0.0);
+		}
+		if(operation == 16)
+		{
+			operation += elevatorPosition(52000);
+		}
+		if(operation == 17)
+		{
+			operation += driveForward(300, 0.0, true, backLeftDrive);
+		}
+		if(operation == 18)
+		{
+			ClawOutput();
+			waitFor(300);
+			ClawStandby();
+			operation++;
+		}
+	}
+
+	private void right_LeftScaleLeftSwitch()
+	{
+		if(operation == 0)
+		{
+			operation += driveForward(5200, 0.0, true, frontRightDrive);
+		}
+		if(operation == 1)
+		{
+			resetWheelEncoders();
+			waitFor(300);
+			operation++;
+		}
+		if(operation == 2)
+		{
+			operation += driveLeft(7700, 0.0, backLeftDrive);
+		}
+		if(operation == 3)
+		{
+			resetWheelEncoders();
+			waitFor(300);
+			operation++;
+		}
+		if(operation == 4)
+		{
+			operation += driveForward(2000, 0.0, true, frontRightDrive);
+		}
+		if(operation == 5)
+		{
+			operation += pidTurnExact(60.0);
+		}
+		if(operation == 6)
+		{
+			operation += elevatorPosition(35000);
+		}
+		if(operation == 7)
+		{
+			ClawRotateUp();
+			waitFor(75);
+			ClawStop();
+			waitFor(100);
+			ClawOutput();
+			waitFor(500);
+			ClawStandby();
+			resetWheelEncoders();
+			waitFor(300);
+			operation++;
+		}
+		if(operation == 8)
+		{
+			operation += elevatorPosition(1000);
+		}
+		if(operation == 9)
+		{
+			operation += pidTurnExact(150);
+		}
+		if(operation == 10)
+		{
+			ClawRotateUp();
+			waitFor(500);
+			ClawStop();
+			ClawOpen();
+			ClawIntake();
+			resetWheelEncoders();
+			waitFor(300);
+			operation++;
+		}
+		if(operation == 11)
+		{
+			operation += driveForward(2100, 150.0, false, frontRightDrive);
+		}
+		if(operation == 12)
+		{
+			ClawClose();
+			waitFor(1000);
+			ClawStandby();
+			resetWheelEncoders();
+			waitFor(300);
+			operation++;
+		}
+		if(operation == 13)
+		{
+			operation += elevatorPosition(30000);
+		}
+		if(operation == 14)
+		{
+			operation += driveForward(1000, 150.0, false, frontRightDrive);
+		}
+		if(operation == 15)
+		{
+			ClawOpen();
+		}
+	}
+
+	private void right_RightScale()
+	{
+		if(operation == 0)
+		{
+			operation += driveForward(7500, 0.0, true, backLeftDrive);
+		}
+		if(operation == 1)
+		{
+			operation += pidTurnExact(-60.0);
+		}
+		if(operation == 2)
+		{
+			operation += elevatorPosition(35000);
+		}
+		if(operation == 3)
+		{
+			elevatorPosition(35000);
+			ClawRotateUp();
+			waitFor(75);
+			ClawStop();
+			waitFor(100);
+			ClawOutput();
+			waitFor(500);
+			ClawStandby();
+			resetWheelEncoders();
+			waitFor(300);
+			operation++;
+		}
+		if(operation == 4)
+		{
+			operation += elevatorPosition(1000);
+
+		}
+	}
+
+	private void right_RightScaleRightSwitch()
+	{
+		if(operation == 0)
+		{
+			operation += driveForward(6900, 0.0, true, backLeftDrive);
+		}
+		if(operation == 1)
+		{
+			operation += pidTurnExact(-60.0);
+		}
+		if(operation == 2)
+		{
+			operation += elevatorPosition(35000);
+		}
+		if(operation == 3)
+		{
+			elevatorPosition(35000);
+			ClawRotateUp();
+			waitFor(75);
+			ClawStop();
+			waitFor(100);
+			ClawOutput();
+			waitFor(500);
+			ClawStandby();
+			resetWheelEncoders();
+			waitFor(300);
+			operation++;
+		}
+		if(operation == 4)
+		{
+			operation += elevatorPosition(1000);
+
+		}
+		if(operation == 5)
+		{
+			elevatorPosition(1000);
+			operation += pidTurnExact(-150);
+		}
+		if(operation == 6)
+		{
+			elevatorPosition(1000);
+			ClawRotateUp();
+			waitFor(500);
+			ClawStop();
+			ClawOpen();
+			ClawIntake();
+			operation++;
+		}
+		if(operation == 7)
+		{
+			elevatorPosition(1000);
+			operation += driveForward(2100, -150.0, false, backLeftDrive);
+		}
+		if(operation == 8)
+		{
+			elevatorPosition(1000);
+			ClawClose();
+			waitFor(1000);
+			ClawStandby();
+			resetWheelEncoders();
+			waitFor(300);
+			operation++;
+		}
+		if(operation == 9)
+		{
+			operation += elevatorPosition(30000);
+		}
+		if(operation == 10)
+		{
+			elevatorPosition(1000);
+			operation += driveForward(1000, -150.0, false, backLeftDrive);
+		}
+		if(operation == 11)
+		{
+			ClawOpen();
+		}
+	}
+
+	private void right_TwoRightScale()
+	{
+		if(operation == 0)
+		{
+			operation += driveForward(7500, 0.0, true, backLeftDrive);
+		}
+		if(operation == 1)
+		{
+			operation += pidTurnExact(-60.0);
+		}
+		if(operation == 2)
+		{
+			operation += elevatorPosition(35000);
+		}
+		if(operation == 3)
+		{
+			ClawRotateUp();
+			waitFor(75);
+			ClawStop();
+			waitFor(100);
+			ClawOutput();
+			waitFor(500);
+			ClawStandby();
+			resetWheelEncoders();
+			waitFor(300);
+			operation++;
+		}
+		if(operation == 4)
+		{
+			operation += elevatorPosition(1000);
+
+		}
+		if(operation == 5)
+		{
+			operation += pidTurnExact(-150);
+		}
+		if(operation == 6)
+		{
+			ClawRotateUp();
+			waitFor(500);
+			ClawStop();
+			ClawOpen();
+			ClawIntake();
+			operation++;
+		}
+		if(operation == 7)
+		{
+			operation += driveForward(2100, -150.0, false, backLeftDrive);
+		}
+		if(operation == 8)
+		{
+			ClawClose();
+			waitFor(300);
+			ClawStandby();
+			resetWheelEncoders();
+			waitFor(300);
+			operation++;
+		}
+		if(operation == 9)
+		{
+			operation += pidTurnExact(30);
+		}
+		if(operation == 10)
+		{
+			operation += driveForward(2000, 30, false, backLeftDrive);
+		}
+		if(operation == 11)
+		{
+			operation += pidTurnExact(0.0);
+		}
+		if(operation == 12)
+		{
+			operation += elevatorPosition(52000);
+		}
+		if(operation == 13)
+		{
+			operation += driveForward(300, 0.0, true, backLeftDrive);
+		}
+		if(operation == 14)
+		{
+			ClawOutput();
+			waitFor(500);
+			ClawStandby();
+		}
 	}
 }

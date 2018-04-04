@@ -372,13 +372,11 @@ public class Robot extends TimedRobot
 		}
 		ClawClose();
 		//get air for pneumatics
-		/*
 		pressureSwitch = air.getPressureSwitchValue();
 		if (!pressureSwitch) 
 		{
 			air.setClosedLoopControl(true);
 		}
-		 */
 
 		//START OF AUTONOMOUS
 		//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -737,7 +735,6 @@ public class Robot extends TimedRobot
 	public void teleopInit()
 	{
 		drivetrain.setSafetyEnabled(true);
-		resetWheelEncoders();
 		FLController.disable();
 		FRController.disable();
 		BLController.disable();

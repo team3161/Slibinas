@@ -14,8 +14,10 @@ import edu.wpi.first.wpilibj.Compressor;
 import edu.wpi.first.wpilibj.DigitalInput;
 import edu.wpi.first.wpilibj.DoubleSolenoid;
 import edu.wpi.first.wpilibj.DriverStation;
+import edu.wpi.first.wpilibj.I2C;
 import edu.wpi.first.wpilibj.PIDController;
 import edu.wpi.first.wpilibj.SPI;
+import edu.wpi.first.wpilibj.SerialPort;
 import edu.wpi.first.wpilibj.TimedRobot;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.VictorSP;
@@ -50,6 +52,9 @@ public class Robot extends TimedRobot
 	boolean isWaiting = false;
 	long waitStartTime = -1;
 
+	private int firstAction = 0;
+	private int secondAction = 0;
+
 	//Declaring the way the robot will drive - RoboDrive class
 	private MecanumDrive drivetrain;
 
@@ -67,7 +72,7 @@ public class Robot extends TimedRobot
 	//For drive train PID - face buttons
 	PIDController turnController;
 	double rotate;
-	double Pg = AUTO_PID_LOOP_PERIOD;
+	double Pg = 0.02;
 	double Ig = 0.00;
 	double Dg = 0.06;
 	float kToleranceDegrees = 2;
@@ -167,6 +172,8 @@ public class Robot extends TimedRobot
 
 	//A counter that controls operations in autonomous
 	private int operation;
+	
+	Timer autoTimer = new Timer();
 
 	private volatile Thread autoThread = null;
 
@@ -274,7 +281,7 @@ public class Robot extends TimedRobot
 
 
 		//Reads in gyro from I2C connections
-		//ahrs = new AHRS (I2C.Port.kOnboard);
+		//ahrs = new AHRS(SerialPort.Port.kUSB);
 
 		//Initiate the RoboDrive class, so that drive train variable can be used with the talons - driving controller
 		drivetrain = new MecanumDrive(frontLeftDrive, backLeftDrive, frontRightDrive, backRightDrive);
@@ -354,6 +361,7 @@ public class Robot extends TimedRobot
 		System.out.println("AUTONOMOUS INIT");
 		drivetrain.setSafetyEnabled(false);
 		ahrs.reset();
+		autoTimer.start();
 		//Get scale/switch positions from driver station
 		gameData = DriverStation.getInstance().getGameSpecificMessage();
 		resetWheelEncoders();
@@ -375,11 +383,11 @@ public class Robot extends TimedRobot
 
 		leftElevator.enableCurrentLimit(true);
 		rightElevator.enableCurrentLimit(true);
-
+		
 		if (this.autoThread != null) {
 			this.autoThread.interrupt();
 		}
-
+		
 		this.autoThread = new Thread(new Runnable() {
 			{
 				System.out.println("Auto Thread Initialized");
@@ -394,14 +402,202 @@ public class Robot extends TimedRobot
 			}
 		});
 		this.autoThread.start();
+
 	}
 
 	public void autonomousRoutine()
 	{
 		if (selectedAutoMode.equals(StartingLocation.ABORT)) {
+			if(gameData.charAt(0) == 'L')
+			{
+				if(operation == 0)
+				{
+					operation += driveForward(1400, 0.0, true, frontRightDrive);
+				}
+				if(operation == 1)
+				{
+					resetWheelEncoders();
+					Timer.delay(0.3);
+					operation++;
+				}
+				if(operation == 2)
+				{
+					operation += driveLeft(1600, 0.0, frontRightDrive);
+				}
+				if(operation == 3)
+				{
+					operation += driveForward(2800, 0.0, true, frontRightDrive);
+				}
+				if(operation == 4)
+				{
+					operation ++;
+				}
+				if(operation == 5)
+				{
+					ClawOutput();
+					Timer.delay(0.5);
+					operation++;
+				}
+				if(operation == 6)
+				{
+					ClawStandby();
+					operation++;
+				}
+				if(operation == 7)
+				{
+					operation += driveBackward(2200, 0.0, false, frontRightDrive);	
+				}
+				if(operation == 8)
+				{
+					ClawRotateUp();
+					Timer.delay(1.0);
+					operation++;
+				}
+				if(operation == 9)
+				{
+					ClawOpen();
+					operation++;
+				}
+				if(operation == 10)
+				{
+					ClawIntake();
+					operation += driveRight(1700, 0.0, backRightDrive);
+				}
+				if(operation == 11)
+				{
+					operation += driveForward(1700, 0.0, true, frontRightDrive);
+				}
+				if(operation == 12)
+				{
+					ClawClose();
+					operation++;	
+				}
+				if(operation == 13)
+				{
+					operation += waitFor(300);
+				}
+				if(operation == 14)
+				{
+					ClawStandby();
+					operation++;
+				}
+				if(operation == 15)
+				{
+					operation += driveBackward(400, 0.0, true, frontRightDrive);
+				}
+				if(operation == 16)
+				{
+					operation += driveLeft(1700, 0.0, frontRightDrive);
+				}
+				if(operation == 17)
+				{
+					ClawRotateDown();
+					Timer.delay(0.7);
+					ClawStop();
+					operation++;
+				}
+				if(operation == 18)
+				{
+					operation += driveForward(2200, 0.0, true, frontRightDrive);
+				}
+				if(operation == 19)
+				{
+					ClawOutput();
+				}
+			}else if(gameData.charAt(0) == 'R')
+			{
+				if(operation == 0)
+				{
+					operation += driveForward(1500, 0.0, true, backLeftDrive);
+				}
+				if(operation == 1)
+				{
+					operation += driveRight(2000, 0.0, backRightDrive);
+				}
+				if(operation == 2)
+				{
+					operation += driveForward(1600, 0.0, true, backLeftDrive);
+				}
+				if(operation == 3)
+				{
+					operation++;
+				}
+				if(operation == 4)
+				{
+					ClawOutput();
+					Timer.delay(0.5);
+					operation++;
+				}
+				if(operation == 5)
+				{
+					ClawStandby();
+					operation++;
+				}
+				if(operation == 6)
+				{
+					operation += driveBackward(1900, 0.0, false, backLeftDrive);	
+				}
+				if(operation == 7)
+				{
+					ClawRotateUp();
+					Timer.delay(1.0);
+					operation++;
+				}
+				if(operation == 8)
+				{
+					ClawOpen();
+					operation++;
+				}
+				if(operation == 9)
+				{
+					ClawIntake();
+					operation += driveLeft(2200, 0.0, backRightDrive);
+				}
+				if(operation == 10)
+				{
+					operation += driveForward(1700, 0.0, true, backLeftDrive);
+				}
+				if(operation == 11)
+				{
+					ClawClose();
+					operation++;	
+				}
+				if(operation == 12)
+				{
+					Timer.delay(0.3);
+					operation ++;
+				}
+				if(operation == 13)
+				{
+					ClawStandby();
+					operation++;
+				}
+				if(operation == 14)
+				{
+					operation += driveBackward(1700, 0.0, true, backLeftDrive);
+				}
+				if(operation == 15)
+				{
+					operation += driveRight(2200, 0.0, backLeftDrive);
+				}
+				if(operation == 16)
+				{
+					ClawRotateDown();
+					Timer.delay(0.7);
+					ClawStop();
+					operation++;
+				}
+				if(operation == 17)
+				{
+					operation += driveForward(2200, 0.0, true, backLeftDrive);
+				}
+				if(operation == 18)
+				{
+					ClawOpen();
+				}
+			}
 			return;
 		}
-		ClawClose();
 		//get air for pneumatics
 		/*
 		pressureSwitch = air.getPressureSwitchValue();
@@ -585,9 +781,7 @@ public class Robot extends TimedRobot
 				default:
 					break;
 				}
-
 				break;
-
 			default:
 				break;
 			}
@@ -665,10 +859,8 @@ public class Robot extends TimedRobot
 					break;
 				default:
 					break;
-
 				}
 				break;
-
 			default:
 				break;
 			}
@@ -731,7 +923,7 @@ public class Robot extends TimedRobot
 					}
 					if(operation == 2)
 					{
-						operation += driveForward(1500, -90.0, false, backRightDrive);
+						operation += driveForward(1500, -90.0, false, backLeftDrive);
 					}
 					if(operation == 3)
 					{
@@ -745,7 +937,6 @@ public class Robot extends TimedRobot
 					//Cross field 2 Scale
 					right_TwoLeftScale();
 					break;
-
 				default:
 					break;
 				}
@@ -921,7 +1112,7 @@ public class Robot extends TimedRobot
 		if (elevatorOverride || !bottomLimitSwitch.get()) {
 			resetElevatorEncoder();
 		}		
-		
+
 		//Move the elevator up or down
 		if (leftStickY_Operator > 0.25 && (elevatorOverride || (bottomLimitSwitch.get())))
 		{
@@ -1121,16 +1312,16 @@ public class Robot extends TimedRobot
 		turnController.setSetpoint(angle);
 		turnController.enable();
 
-		double currentAngle = ahrs.getYaw();
-		if(ahrs.getYaw() >= angle - kToleranceDegrees && ahrs.getYaw() <= angle + kToleranceDegrees)
-		{
-			drivetrain.driveCartesian(0.0, 0.0, rotate * 0.75, currentAngle);
-			return 0;
-		}else
-		{
-			resetWheelEncoders();
-			return 1;
+		while (isEnabled() && isAutonomous() &&
+				!(ahrs.getYaw() >= angle - kToleranceDegrees && ahrs.getYaw() <= angle + kToleranceDegrees)) {
+			double currentAngle = ahrs.getYaw();
+			drivetrain.driveCartesian(0.0, 0.0, rotate, currentAngle);
+			Timer.delay(AUTO_PID_LOOP_PERIOD);
 		}
+		resetWheelEncoders();
+		drivetrain.stopMotor();
+		turnController.disable();
+		return isAutonomous() && isEnabled() ? 1 : 0;
 
 	}
 
@@ -1155,6 +1346,7 @@ public class Robot extends TimedRobot
 
 	private int driveForward(double ticks, double driveAngle, boolean fieldCentric, WPI_TalonSRX talon)
 	{
+		resetWheelEncoders();
 		//FRONT LEFT
 		FLController.setSetpoint(ticks);
 		FLController.enable();
@@ -1171,23 +1363,28 @@ public class Robot extends TimedRobot
 		BRController.setSetpoint(-ticks);
 		BRController.enable();
 
-		//Getting current angle and speed to use in driveCartesian()
-		angle = ahrs.getYaw();
-		YSpeed = (FLSpeed + BLSpeed + FRSpeed + BRSpeed / 4);
-		if(Math.abs(getTicks(talon)) >= ticks - tolerance && Math.abs(getTicks(talon)) <= ticks + tolerance)
-		{
-			resetWheelEncoders();
-			return 1;
-		}else
-		{
-			drivetrain.driveCartesian(-0.05, YSpeed, gyroPID(driveAngle), fieldCentric ? -angle : 0);
-			return 0;
+		while (isEnabled() && isAutonomous() &&
+				!(Math.abs(getTicks(talon)) >= ticks - tolerance && Math.abs(getTicks(talon)) <= ticks + tolerance)) {
+			YSpeed = (FLSpeed + BLSpeed + FRSpeed + BRSpeed / 4);
+			//Getting current angle and speed to use in driveCartesian()
+			angle = ahrs.getYaw();
+			drivetrain.driveCartesian(-0.075, YSpeed, gyroPID(driveAngle), fieldCentric ? -angle : 0);
+			showDisplay();
+			Timer.delay(AUTO_PID_LOOP_PERIOD);
 		}
+		resetWheelEncoders();
+		drivetrain.stopMotor();
+		FLController.disable();
+		FRController.disable();
+		BLController.disable();
+		BRController.disable();
+		return isAutonomous() && isEnabled() ? 1 : 0;
 	}
 
 	//Driving left using encoders
 	private int driveRight(double ticks, double driveAngle, WPI_TalonSRX talon)
 	{
+		resetWheelEncoders();
 		//FRONT LEFT
 		FLController.setSetpoint(ticks);
 		FLController.enable();
@@ -1204,23 +1401,27 @@ public class Robot extends TimedRobot
 		BRController.setSetpoint(-ticks);
 		BRController.enable();
 
-		//Getting current angle and speed to use in driveCartesian()
-		XSpeed = (FLSpeed + BLSpeed + FRSpeed + BRSpeed / 4);
-		angle = ahrs.getYaw();
-		if(Math.abs(getTicks(talon)) >= ticks - tolerance && Math.abs(getTicks(talon)) <= ticks + tolerance)
-		{
-			resetWheelEncoders();
-			return 1;
-		}else
-		{
+		while (isEnabled() && isAutonomous() &&
+				!(Math.abs(getTicks(talon)) >= ticks - tolerance && Math.abs(getTicks(talon)) <= ticks + tolerance)) {
+			XSpeed = (FLSpeed + BLSpeed + FRSpeed + BRSpeed / 4);
+			angle = ahrs.getYaw();
 			drivetrain.driveCartesian(XSpeed, 0.0, gyroPID(driveAngle), -angle);
-			return 0;
-		}			
+			showDisplay();
+			Timer.delay(AUTO_PID_LOOP_PERIOD);
+		}
+		resetWheelEncoders();
+		drivetrain.stopMotor();
+		FLController.disable();
+		FRController.disable();
+		BLController.disable();
+		BRController.disable();
+		return isAutonomous() && isEnabled() ? 1 : 0;	
 	}
 
 	//Driving right using encoders
 	private int driveLeft(double ticks, double driveAngle, WPI_TalonSRX talon)
 	{
+		resetWheelEncoders();
 		//FRONT LEFT
 		FLController.setSetpoint(-ticks);
 		FLController.enable();
@@ -1237,53 +1438,59 @@ public class Robot extends TimedRobot
 		BRController.setSetpoint(ticks);
 		BRController.enable();
 
-		//Getting current angle and speed to use in driveCartesian()
-		XSpeed = (FLSpeed + BLSpeed + FRSpeed + BRSpeed / 4);
-		angle = ahrs.getYaw();
-		if(Math.abs(getTicks(talon)) >= ticks - tolerance && Math.abs(getTicks(talon)) <= ticks + tolerance)
-		{
-			resetWheelEncoders();
-			return 1;
-		}else
-		{
+		while (isEnabled() && isAutonomous() &&
+				!(Math.abs(getTicks(talon)) >= ticks - tolerance && Math.abs(getTicks(talon)) <= ticks + tolerance)) {
+			XSpeed = (FLSpeed + BLSpeed + FRSpeed + BRSpeed / 4);
+			angle = ahrs.getYaw();
 			drivetrain.driveCartesian(XSpeed, 0.0, gyroPID(driveAngle), -angle);
-			return 0;
-		}		
+			showDisplay();
+			Timer.delay(AUTO_PID_LOOP_PERIOD);
+		}
+		resetWheelEncoders();
+		drivetrain.stopMotor();
+		FLController.disable();
+		FRController.disable();
+		BLController.disable();
+		BRController.disable();
+		return isAutonomous() && isEnabled() ? 1 : 0;
 	}
 
 	//Driving backward using encoders
-		private int driveBackward(double ticks, double driveAngle, boolean fieldCentric, WPI_TalonSRX talon)
-		{
-			resetWheelEncoders();
-			//FRONT LEFT
-			FLController.setSetpoint(-ticks);
-			FLController.enable();
+	private int driveBackward(double ticks, double driveAngle, boolean fieldCentric, WPI_TalonSRX talon)
+	{
+		resetWheelEncoders();
+		//FRONT LEFT
+		FLController.setSetpoint(-ticks);
+		FLController.enable();
 
-			//FRONT RIGHT
-			FRController.setSetpoint(ticks);
-			FRController.enable();
+		//FRONT RIGHT
+		FRController.setSetpoint(ticks);
+		FRController.enable();
 
-			//BACK LEFT
-			BLController.setSetpoint(-ticks);
-			BLController.enable();
+		//BACK LEFT
+		BLController.setSetpoint(-ticks);
+		BLController.enable();
 
-			//BACK RIGHT
-			BRController.setSetpoint(ticks);
-			BRController.enable();
+		//BACK RIGHT
+		BRController.setSetpoint(ticks);
+		BRController.enable();
 
-			//Getting current angle and speed to use in driveCartesian()
+		while (isEnabled() && isAutonomous() &&
+				!(Math.abs(getTicks(talon)) >= ticks - tolerance && Math.abs(getTicks(talon)) <= ticks + tolerance)) {
 			YSpeed = (FLSpeed + BLSpeed + FRSpeed + BRSpeed / 4);
 			angle = ahrs.getYaw();
-			if(Math.abs(getTicks(talon)) >= ticks - tolerance && Math.abs(getTicks(talon)) <= ticks + tolerance)
-			{
-				resetWheelEncoders();
-				return 1;
-			}else
-			{
-				drivetrain.driveCartesian(0, YSpeed, gyroPID(driveAngle), fieldCentric ? -angle: 0);
-				return 0;
-			}
+			drivetrain.driveCartesian(0, YSpeed, gyroPID(driveAngle), fieldCentric ? -angle :0);
+			showDisplay();
+			Timer.delay(AUTO_PID_LOOP_PERIOD);
 		}
+		resetWheelEncoders();
+		drivetrain.stopMotor();
+		FLController.disable();
+		FRController.disable();
+		BLController.disable();
+		BRController.disable();
+		return isAutonomous() && isEnabled() ? 1 : 0;
+	}
 
 	//Resets all encoders
 	private void resetWheelEncoders()
@@ -1328,6 +1535,7 @@ public class Robot extends TimedRobot
 		SmartDashboard.putNumber("Elevator Height", rightElevator.getSelectedSensorPosition(0));
 		SmartDashboard.putNumber("Operation", operation);
 		SmartDashboard.putNumber("ESPEED:", ESpeed);
+		SmartDashboard.putNumber("YSPEED", YSpeed);
 	}
 
 	private int waitFor(int millis)
@@ -1364,7 +1572,7 @@ public class Robot extends TimedRobot
 	{
 		if(operation == 0)
 		{
-			operation += driveForward(1500, 0.0, true, backLeftDrive);
+			operation += driveForward(2100, 0.0, true, backLeftDrive);
 		}
 		if(operation == 1)
 		{
@@ -1372,29 +1580,31 @@ public class Robot extends TimedRobot
 		}
 		if(operation == 2)
 		{
-			operation += driveLeft(1800, 0.0, backRightDrive);
+			operation += driveLeft(1250, 0.0, backRightDrive);
 		}
 		if(operation == 3)
 		{
-			operation += driveForward(1900, 0.0, true, backRightDrive);
+			operation += driveForward(2500, 0.0, true, frontRightDrive);
 		}
 		if(operation == 4)
 		{
-			operation += pidTurnExact(0.0);
+			operation ++;
 		}
 		if(operation == 5)
 		{
-			pidTurnExact(0.0);
+			operation++;
 		}
 		if(operation == 6)
 		{
-			operation += waitFor(300);
+			Timer.delay(0.30);
 			ClawOutput();
+			operation++;
 		}
 		if (operation == 7)
 		{
-			operation += waitFor(500);
+			Timer.delay(0.5);
 			ClawStandby();	
+			operation++;
 		}
 	}
 
@@ -1415,20 +1625,22 @@ public class Robot extends TimedRobot
 		}
 		if(operation == 3)
 		{
-			operation += pidTurnExact(0.0);
+			operation ++;
 		}
 		if(operation == 4)
 		{
-			operation += pidTurnExact(0.0);
+			operation ++;
 		}
 		if(operation == 5)
 		{
-			operation += waitFor(300);
+			Timer.delay(0.3);
+			operation++;
 		}
 		if(operation == 6)
 		{
 			ClawOutput();
-			operation += waitFor(500);
+			Timer.delay(0.5);
+			operation++;
 		}
 		if(operation == 7)
 		{
@@ -1460,22 +1672,26 @@ public class Robot extends TimedRobot
 		if(operation == 4) 
 		{
 			ClawRotateUp();
-			operation += waitFor(300);
+			Timer.delay(0.075);
+			operation++;
 		}
 		if(operation == 5) {	
 			ClawStop();
 			operation++;
 		}
 		if(operation == 6) {
-			operation += waitFor(100);
+			Timer.delay(0.3);
+			operation++;
 		}
 		if (operation == 7) {
 			ClawOutput();
-			operation += waitFor(500);
+			Timer.delay(0.5);
+			operation++;
 		}
 		if (operation == 8) {
 			ClawStandby();
-			operation += waitFor(300);
+			Timer.delay(0.3);
+			operation++;
 		}
 		if(operation == 9)
 		{
@@ -1513,19 +1729,23 @@ public class Robot extends TimedRobot
 		if(operation == 6)
 		{
 			ClawRotateUp();
-			operation += waitFor(75);
+			Timer.delay(0.075);
+			operation++;
 		}
 		if (operation == 7) {
 			ClawStop();
-			operation += waitFor(100);
+			Timer.delay(0.1);
+			operation++;
 		}
 		if (operation == 8) {
 			ClawShoot();
-			operation += waitFor(500);
+			Timer.delay(0.3);
+			operation++;
 		}
 		if (operation == 9) {
 			ClawStandby();
-			operation += waitFor(300);
+			Timer.delay(0.3);
+			operation++;
 		}
 		if(operation == 10)
 		{
@@ -1539,14 +1759,16 @@ public class Robot extends TimedRobot
 		if(operation == 12)
 		{
 			ClawRotateUp();
-			operation += waitFor(500);
+			Timer.delay(0.5);
+			operation++;
 		}
 		if(operation == 13)
 		{
 			ClawStop();
 			ClawOpen();
 			ClawIntake();
-			operation += waitFor(30);
+			Timer.delay(0.3);
+			operation++;
 		}
 		if(operation == 14)
 		{
@@ -1556,7 +1778,8 @@ public class Robot extends TimedRobot
 		{
 			ClawClose();
 			ClawStandby();
-			operation += waitFor(1000);
+			Timer.delay(1.0);
+			operation++;
 		}
 		if(operation == 16)
 		{
@@ -1590,17 +1813,20 @@ public class Robot extends TimedRobot
 		if(operation == 3)
 		{
 			ClawRotateUp();
-			operation += waitFor(75);
+			Timer.delay(0.075);
+			operation++;
 		}
 		if(operation == 4)
 		{
 			ClawStop();
-			operation += waitFor(100);
+			Timer.delay(0.1);
+			operation++;
 		}
 		if(operation == 5)
 		{
 			ClawOutput();
-			operation += waitFor(500);
+			Timer.delay(0.1);
+			operation++;
 		}
 		if(operation == 6)
 		{
@@ -1613,7 +1839,8 @@ public class Robot extends TimedRobot
 		if(operation == 8)
 		{
 			ClawRotateUp();
-			operation += waitFor(500);
+			Timer.delay(0.5);
+			operation++;
 		}
 		if(operation == 9)
 		{
@@ -1629,14 +1856,16 @@ public class Robot extends TimedRobot
 		if(operation == 11)
 		{
 			ClawClose();
-			operation += waitFor(1000);
+			Timer.delay(1.0);
+			operation++;
 		}
 		if(operation == 12)
 		{
 			ClawStandby();
-			operation += waitFor(300);
+			Timer.delay(0.3);
+			operation++;
 		}
-		
+
 		if(operation == 13)
 		{
 			operation += elevatorPosition(30000);
@@ -1669,17 +1898,20 @@ public class Robot extends TimedRobot
 		if(operation == 3)
 		{
 			ClawRotateUp();
-			operation += waitFor(75);
+			Timer.delay(0.075);
+			operation++;
 		}
 		if(operation == 4)
 		{
 			ClawStop();
-			operation += waitFor(100);
+			Timer.delay(0.1);
+			operation++;
 		}
 		if(operation == 5)
 		{
 			ClawOutput();
-			operation += waitFor(300);
+			Timer.delay(0.3);
+			operation++;
 		}
 		if(operation == 6)
 		{
@@ -1698,7 +1930,8 @@ public class Robot extends TimedRobot
 		if(operation == 9)
 		{
 			ClawRotateUp();
-			operation += waitFor(500);
+			Timer.delay(0.5);
+			operation++;
 		}
 		if(operation == 10)
 		{
@@ -1714,7 +1947,8 @@ public class Robot extends TimedRobot
 		if(operation == 12)
 		{
 			ClawClose();
-			operation += waitFor(300);
+			Timer.delay(0.3);
+			operation++;
 		}
 		if(operation == 13)
 		{
@@ -1744,7 +1978,8 @@ public class Robot extends TimedRobot
 		if(operation == 19)
 		{
 			ClawOutput();
-			operation += waitFor(500);
+			Timer.delay(0.5);
+			operation++;
 		}
 		if(operation == 20)
 		{
@@ -1758,7 +1993,7 @@ public class Robot extends TimedRobot
 	{
 		if(operation == 0)
 		{
-			operation += driveForward(6100, 0.0, true, backLeftDrive);
+			operation += driveForward(6200, 0.0, true, backLeftDrive);
 		}
 		if(operation == 1)
 		{
@@ -1779,17 +2014,20 @@ public class Robot extends TimedRobot
 		if(operation == 5)
 		{
 			ClawRotateUp();
-			operation += waitFor(75);
+			Timer.delay(0.075);
+			operation++;
 		}
 		if(operation == 6)
 		{
 			ClawStop();
-			operation += waitFor(100);
+			Timer.delay(0.1);
+			operation++;
 		}
 		if(operation == 7)
 		{
-			ClawShoot();
-			operation += waitFor(500);
+			ClawOutput();
+			Timer.delay(0.5);
+			operation++;
 		}
 		if(operation == 8)
 		{
@@ -1829,17 +2067,19 @@ public class Robot extends TimedRobot
 		if(operation == 5)
 		{
 			ClawRotateUp();
-			operation += waitFor(75);
+			Timer.delay(0.075);
+			operation++;
 		}
 		if(operation == 6)
 		{
 			ClawStop();
-			operation += waitFor(100);
+			Timer.delay(0.1);
+			operation++;
 		}
 		if(operation == 7)
 		{
 			ClawShoot();
-			operation += waitFor(500);
+			Timer.delay(0.5);
 		}
 		if(operation == 8)
 		{
@@ -1857,7 +2097,8 @@ public class Robot extends TimedRobot
 		if(operation == 9)
 		{
 			ClawRotateUp();
-			operation += waitFor(500);
+			Timer.delay(0.5);
+			operation++;
 		}
 		if(operation == 10)
 		{
@@ -1873,7 +2114,8 @@ public class Robot extends TimedRobot
 		if(operation == 11)
 		{
 			ClawClose();
-			operation += (300);
+			Timer.delay(0.3);
+			operation++;
 		}
 		if(operation == 12)
 		{
@@ -1903,7 +2145,8 @@ public class Robot extends TimedRobot
 		if(operation == 18)
 		{
 			ClawOutput();
-			operation += waitFor(500);
+			Timer.delay(0.5);
+			operation++;
 		}
 		if(operation == 19)
 		{
@@ -1916,7 +2159,7 @@ public class Robot extends TimedRobot
 	{
 		if(operation == 0)
 		{
-			operation += driveForward(6000, 0.0, true, frontRightDrive);
+			operation += driveForward(6200, 0.0, true, frontRightDrive);
 		}
 		if(operation == 1)
 		{
@@ -1937,17 +2180,20 @@ public class Robot extends TimedRobot
 		if(operation == 5)
 		{
 			ClawRotateUp();
-			operation += waitFor(75);
+			Timer.delay(0.075);
+			operation++;
 		}
 		if(operation == 6)
 		{
 			ClawStop();
-			operation += waitFor(100);
+			Timer.delay(0.3);
+			operation++;
 		}
 		if(operation == 7)
 		{
 			ClawOutput();
-			operation += waitFor(500);
+			Timer.delay(0.5);
+			operation++;
 		}
 		if(operation == 8)
 		{
@@ -1985,17 +2231,20 @@ public class Robot extends TimedRobot
 		if(operation == 5)
 		{
 			ClawRotateUp();
-			operation += waitFor(75);
+			Timer.delay(0.075);
+			operation++;
 		}
 		if(operation == 6)
 		{
 			ClawStop();
-			operation += waitFor(100);
+			Timer.delay(0.3);
+			operation++;
 		}
 		if(operation == 7)
 		{
 			ClawOutput();
-			operation += waitFor(500);
+			Timer.delay(0.5);
+			operation++;
 		}
 		if(operation == 8)
 		{
@@ -2013,7 +2262,8 @@ public class Robot extends TimedRobot
 		if(operation == 11)
 		{
 			ClawRotateUp();
-			operation += waitFor(500);
+			Timer.delay(0.5);
+			operation++;
 		}
 		if(operation == 12)
 		{
@@ -2029,7 +2279,8 @@ public class Robot extends TimedRobot
 		if(operation == 14)
 		{
 			ClawClose();
-			operation += waitFor(300);
+			Timer.delay(0.3);
+			operation++;
 		}
 		if(operation == 15)
 		{
@@ -2059,7 +2310,8 @@ public class Robot extends TimedRobot
 		if(operation == 21)
 		{
 			ClawOutput();
-			operation += waitFor(300);
+			Timer.delay(0.3);
+			operation++;
 		}
 		if(operation == 22)
 		{
@@ -2093,17 +2345,20 @@ public class Robot extends TimedRobot
 		if(operation == 5)
 		{
 			ClawRotateUp();
-			operation += waitFor(75);
+			Timer.delay(0.075);
+			operation++;
 		}
 		if(operation == 6)
 		{
 			ClawStop();
-			operation += waitFor(100);
+			Timer.delay(0.1);
+			operation++;
 		}
 		if(operation == 7)
 		{
 			ClawOutput();
-			operation += waitFor(500);
+			Timer.delay(0.5);
+			operation++;
 		}
 		if(operation == 8)
 		{
@@ -2121,7 +2376,8 @@ public class Robot extends TimedRobot
 		if(operation == 11)
 		{
 			ClawRotateUp();
-			operation += waitFor(500);
+			Timer.delay(0.5);
+			operation++;
 		}
 		if(operation == 12)
 		{
@@ -2137,7 +2393,8 @@ public class Robot extends TimedRobot
 		if(operation == 14)
 		{
 			ClawClose();
-			operation += waitFor(1000);
+			Timer.delay(1.0);
+			operation++;
 		}
 		if(operation == 15)
 		{
@@ -2163,7 +2420,7 @@ public class Robot extends TimedRobot
 	{
 		if(operation == 0)
 		{
-			operation += driveForward(7500, 0.0, true, backLeftDrive);
+			operation += driveForward(8000, 0.0, true, backLeftDrive);
 		}
 		if(operation == 1)
 		{
@@ -2176,17 +2433,20 @@ public class Robot extends TimedRobot
 		if(operation == 3)
 		{
 			ClawRotateUp();
-			operation += waitFor(75);
+			Timer.delay(0.075);
+			operation++;
 		}
 		if(operation == 4)
 		{
 			ClawStop();
-			operation += waitFor(100);
+			Timer.delay(0.1);
+			operation++;
 		}
 		if(operation == 5)
 		{
 			ClawOutput();
-			operation += waitFor(500);
+			Timer.delay(0.5);
+			operation++;
 		}
 		if(operation == 6)
 		{
@@ -2216,17 +2476,20 @@ public class Robot extends TimedRobot
 		if(operation == 3)
 		{
 			ClawRotateUp();
-			operation += waitFor(75);
+			Timer.delay(0.075);
+			operation++;
 		}
 		if(operation == 4)
 		{
 			ClawStop();
-			operation += waitFor(100);
+			Timer.delay(0.1);
+			operation++;
 		}
 		if(operation == 5)
 		{
 			ClawOutput();
-			operation += waitFor(500);
+			Timer.delay(0.5);
+			operation++;
 		}
 		if(operation == 6)
 		{
@@ -2244,7 +2507,8 @@ public class Robot extends TimedRobot
 		if(operation == 6)
 		{
 			ClawRotateUp();
-			operation += waitFor(500);
+			Timer.delay(0.5);
+			operation++;
 		}
 		if(operation == 7)
 		{
@@ -2260,7 +2524,8 @@ public class Robot extends TimedRobot
 		if(operation == 9)
 		{
 			ClawClose();
-			operation += waitFor(1000);
+			Timer.delay(1.0);
+			operation++;
 		}
 		if(operation == 10)
 		{
@@ -2299,17 +2564,20 @@ public class Robot extends TimedRobot
 		if(operation == 3)
 		{
 			ClawRotateUp();
-			operation += waitFor(75);
+			Timer.delay(0.075);
+			operation++;
 		}
 		if(operation == 4)
 		{
 			ClawStop();
-			operation += waitFor(100);
+			Timer.delay(0.1);
+			operation++;
 		}
 		if(operation == 5)
 		{
 			ClawOutput();
-			operation += waitFor(500);
+			Timer.delay(0.5);
+			operation++;
 		}
 		if(operation == 6)
 		{
@@ -2327,7 +2595,8 @@ public class Robot extends TimedRobot
 		if(operation == 9)
 		{
 			ClawRotateUp();
-			operation += waitFor(500);
+			Timer.delay(0.5);
+			operation++;
 		}
 		if(operation == 10)
 		{
@@ -2343,7 +2612,8 @@ public class Robot extends TimedRobot
 		if(operation == 10)
 		{
 			ClawClose();
-			operation += waitFor(300);
+			Timer.delay(0.3);
+			operation++;
 		}
 		if(operation == 11)
 		{
@@ -2373,7 +2643,7 @@ public class Robot extends TimedRobot
 		if(operation == 17)
 		{
 			ClawOutput();
-			operation += waitFor(500);
+			Timer.delay(0.5);
 		}
 		if(operation == 18)
 		{

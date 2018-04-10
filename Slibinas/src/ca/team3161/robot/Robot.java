@@ -45,7 +45,6 @@ public class Robot extends TimedRobot
 	private WPI_TalonSRX leftElevator = new WPI_TalonSRX (4);
 	private VictorSP leftElevatorSlave = new VictorSP(0);
 	private WPI_TalonSRX rightElevator = new WPI_TalonSRX (6);
-	private DigitalInput topLimitSwitch = new DigitalInput(0);
 	private DigitalInput bottomLimitSwitch = new DigitalInput(1);
 
 	//Variables to be used when waiting
@@ -54,6 +53,8 @@ public class Robot extends TimedRobot
 
 	private int firstAction = 0;
 	private int secondAction = 0;
+	
+	private long timeReachedTarget = -1;
 
 	//Declaring the way the robot will drive - RoboDrive class
 	private MecanumDrive drivetrain;
@@ -416,8 +417,8 @@ public class Robot extends TimedRobot
 				}
 				if(operation == 1)
 				{
-					resetWheelEncoders();
 					Timer.delay(0.3);
+					resetWheelEncoders();
 					operation++;
 				}
 				if(operation == 2)
@@ -1120,7 +1121,7 @@ public class Robot extends TimedRobot
 			leftStickX *= 0.85;
 			leftStickY *= 0.85;
 			currentRotationRate *= 0.5;
-		}else if (leftStickY_Operator < -0.25 && (elevatorOverride || topLimitSwitch.get()))
+		}else if (leftStickY_Operator < -0.25 && !(elevatorOverride))
 		{
 			ElevatorUp();
 		}
@@ -1154,16 +1155,7 @@ public class Robot extends TimedRobot
 		}
 
 		//Right stick on operator controller raises/lowers claw based on input - otherwise it holds
-		if(rightStickY_Operator > 0.25)
-		{
-			ClawRotateUp();
-		}else if(rightStickY_Operator < -0.25) 
-		{
-			ClawRotateDown();
-		}else
-		{
-			ClawStop();
-		}
+		ClawRotate();
 
 		//Stop taking air when pneumatics reaches 120 psi
 		if (pressureSwitch == true) 
@@ -1300,6 +1292,11 @@ public class Robot extends TimedRobot
 	{
 		pivot.set(0.8);
 	}
+	
+	private void ClawRotate()
+	{
+		pivot.set(rightStickY_Operator);
+	}
 
 	//Claw motors are stopped
 	private void ClawStop()
@@ -1362,13 +1359,34 @@ public class Robot extends TimedRobot
 		//BACK RIGHT
 		BRController.setSetpoint(-ticks);
 		BRController.enable();
+		
+		double currentTicks = getTicks(talon);
+		long now = System.currentTimeMillis();
+		boolean onTarget = Math.abs(currentTicks) >= ticks - tolerance && Math.abs(currentTicks) <= ticks + tolerance;
+		boolean timeOnTargetElapsed = timeReachedTarget > 0 && (now > timeReachedTarget + 500);
+		
 
 		while (isEnabled() && isAutonomous() &&
-				!(Math.abs(getTicks(talon)) >= ticks - tolerance && Math.abs(getTicks(talon)) <= ticks + tolerance)) {
-			YSpeed = (FLSpeed + BLSpeed + FRSpeed + BRSpeed / 4);
+				(!onTarget || !timeOnTargetElapsed)) {
+			
+			if(onTarget) {
+				if(timeReachedTarget <= 0) {
+					timeReachedTarget = now;
+				}
+			}else {
+				timeReachedTarget = -1;
+			}
+			
+			currentTicks = getTicks(talon);
+			now = System.currentTimeMillis();
+			onTarget = Math.abs(currentTicks) >= ticks - tolerance && Math.abs(currentTicks) <= ticks + tolerance;
+			timeOnTargetElapsed = timeReachedTarget > 0 && (now > timeReachedTarget + 500);
+			
+			YSpeed = (FLSpeed + BLSpeed + FRSpeed + BRSpeed) / 4;
 			//Getting current angle and speed to use in driveCartesian()
 			angle = ahrs.getYaw();
-			drivetrain.driveCartesian(-0.075, YSpeed, gyroPID(driveAngle), fieldCentric ? -angle : 0);
+			drivetrain.driveCartesian(-0.09, YSpeed, gyroPID(driveAngle), fieldCentric ? -angle : 0);
+			
 			showDisplay();
 			Timer.delay(AUTO_PID_LOOP_PERIOD);
 		}
@@ -1400,12 +1418,32 @@ public class Robot extends TimedRobot
 		//BACK RIGHT
 		BRController.setSetpoint(-ticks);
 		BRController.enable();
+		
+		double currentTicks = getTicks(talon);
+		long now = System.currentTimeMillis();
+		boolean onTarget = Math.abs(currentTicks) >= ticks - tolerance && Math.abs(currentTicks) <= ticks + tolerance;
+		boolean timeOnTargetElapsed = timeReachedTarget > 0 && (now > timeReachedTarget + 500);
 
 		while (isEnabled() && isAutonomous() &&
-				!(Math.abs(getTicks(talon)) >= ticks - tolerance && Math.abs(getTicks(talon)) <= ticks + tolerance)) {
-			XSpeed = (FLSpeed + BLSpeed + FRSpeed + BRSpeed / 4);
+				(!onTarget || !timeOnTargetElapsed)) {
+			
+			if(onTarget) {
+				if(timeReachedTarget <= 0) {
+					timeReachedTarget = now;
+				}
+			}else {
+				timeReachedTarget = -1;
+			}
+			
+			currentTicks = getTicks(talon);
+			now = System.currentTimeMillis();
+			onTarget = Math.abs(currentTicks) >= ticks - tolerance && Math.abs(currentTicks) <= ticks + tolerance;
+			timeOnTargetElapsed = timeReachedTarget > 0 && (now > timeReachedTarget + 500);
+			
+			XSpeed = (FLSpeed + BLSpeed + FRSpeed + BRSpeed) / 4;
 			angle = ahrs.getYaw();
 			drivetrain.driveCartesian(XSpeed, 0.0, gyroPID(driveAngle), -angle);
+			
 			showDisplay();
 			Timer.delay(AUTO_PID_LOOP_PERIOD);
 		}
@@ -1437,12 +1475,32 @@ public class Robot extends TimedRobot
 		//BACK RIGHT
 		BRController.setSetpoint(ticks);
 		BRController.enable();
+		
+		double currentTicks = getTicks(talon);
+		long now = System.currentTimeMillis();
+		boolean onTarget = Math.abs(currentTicks) >= ticks - tolerance && Math.abs(currentTicks) <= ticks + tolerance;
+		boolean timeOnTargetElapsed = timeReachedTarget > 0 && (now > timeReachedTarget + 500);
 
 		while (isEnabled() && isAutonomous() &&
-				!(Math.abs(getTicks(talon)) >= ticks - tolerance && Math.abs(getTicks(talon)) <= ticks + tolerance)) {
-			XSpeed = (FLSpeed + BLSpeed + FRSpeed + BRSpeed / 4);
+				(!onTarget || !timeOnTargetElapsed)) {
+			
+			if(onTarget) {
+				if(timeReachedTarget <= 0) {
+					timeReachedTarget = now;
+				}
+			}else {
+				timeReachedTarget = -1;
+			}
+			
+			currentTicks = getTicks(talon);
+			now = System.currentTimeMillis();
+			onTarget = Math.abs(currentTicks) >= ticks - tolerance && Math.abs(currentTicks) <= ticks + tolerance;
+			timeOnTargetElapsed = timeReachedTarget > 0 && (now > timeReachedTarget + 500);
+			
+			XSpeed = (FLSpeed + BLSpeed + FRSpeed + BRSpeed) / 4;
 			angle = ahrs.getYaw();
 			drivetrain.driveCartesian(XSpeed, 0.0, gyroPID(driveAngle), -angle);
+			
 			showDisplay();
 			Timer.delay(AUTO_PID_LOOP_PERIOD);
 		}
@@ -1474,15 +1532,36 @@ public class Robot extends TimedRobot
 		//BACK RIGHT
 		BRController.setSetpoint(ticks);
 		BRController.enable();
+		
+		double currentTicks = getTicks(talon);
+		long now = System.currentTimeMillis();
+		boolean onTarget = Math.abs(currentTicks) >= ticks - tolerance && Math.abs(currentTicks) <= ticks + tolerance;
+		boolean timeOnTargetElapsed = timeReachedTarget > 0 && (now > timeReachedTarget + 500);
 
 		while (isEnabled() && isAutonomous() &&
-				!(Math.abs(getTicks(talon)) >= ticks - tolerance && Math.abs(getTicks(talon)) <= ticks + tolerance)) {
-			YSpeed = (FLSpeed + BLSpeed + FRSpeed + BRSpeed / 4);
+				(!onTarget || !timeOnTargetElapsed)) {
+			
+			if(onTarget) {
+				if(timeReachedTarget <= 0) {
+					timeReachedTarget = now;
+				}
+			}else {
+				timeReachedTarget = -1;
+			}
+			
+			currentTicks = getTicks(talon);
+			now = System.currentTimeMillis();
+			onTarget = Math.abs(currentTicks) >= ticks - tolerance && Math.abs(currentTicks) <= ticks + tolerance;
+			timeOnTargetElapsed = timeReachedTarget > 0 && (now > timeReachedTarget + 500);			
+			
+			YSpeed = (FLSpeed + BLSpeed + FRSpeed + BRSpeed) / 4;
 			angle = ahrs.getYaw();
 			drivetrain.driveCartesian(0, YSpeed, gyroPID(driveAngle), fieldCentric ? -angle :0);
+			
 			showDisplay();
 			Timer.delay(AUTO_PID_LOOP_PERIOD);
 		}
+		Timer.delay(0.4);
 		resetWheelEncoders();
 		drivetrain.stopMotor();
 		FLController.disable();
@@ -1563,8 +1642,9 @@ public class Robot extends TimedRobot
 	{
 		if(operation == 0)
 		{
-			operation += driveForward(5000, 0.0, true, backLeftDrive);
+			operation += driveForward(4000, 0.0, true, backLeftDrive);
 		}
+		return;
 	}
 
 	//Start Middle, score left switch
@@ -1655,7 +1735,7 @@ public class Robot extends TimedRobot
 	{
 		if(operation == 0)
 		{
-			operation += driveForward(7500, 0.0, true, backLeftDrive);
+			operation += driveForward(7800, 0.0, true, backLeftDrive);
 		}
 		if(operation == 1)
 		{
@@ -1667,7 +1747,7 @@ public class Robot extends TimedRobot
 		}
 		if(operation == 3)
 		{
-			operation += elevatorPosition(35000);
+			operation ++;
 		}
 		if(operation == 4) 
 		{
@@ -1997,7 +2077,7 @@ public class Robot extends TimedRobot
 		}
 		if(operation == 1)
 		{
-			operation += driveRight(7700, 0.0, backLeftDrive);
+			operation += driveRight(7900, 0.0, backLeftDrive);
 		}
 		if(operation == 2)
 		{
@@ -2163,7 +2243,7 @@ public class Robot extends TimedRobot
 		}
 		if(operation == 1)
 		{
-			operation += driveLeft(7700, 0.0, backLeftDrive);
+			operation += driveLeft(7900, 0.0, backLeftDrive);
 		}
 		if(operation == 2)
 		{
